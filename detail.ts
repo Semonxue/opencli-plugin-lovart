@@ -45,8 +45,7 @@ cli({
             name: 'list',
             default: '',
             type: 'string',
-            choices: ['all', 'image', 'video', 'upload'],
-            help: 'List assets. Options: all, image, video, upload. Omit for summary only.',
+            help: 'List assets: all, image, video, upload. Omit for summary only.',
         },
         {
             name: 'canvas',
@@ -77,7 +76,12 @@ cli({
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const listKind = String(kwargs.list || '').toLowerCase();
+        const listKindRaw = String(kwargs.list || '').toLowerCase();
+        const validKinds = new Set(['all', 'image', 'video', 'upload']);
+        // Unknown values fall back to "summary only" rather than blowing up
+        // — the choice validator is intentionally absent so empty/default
+        // doesn't trip a hard error.
+        const listKind = validKinds.has(listKindRaw) ? listKindRaw : '';
         const showCanvas = kwargs.canvas === true || kwargs.canvas === 'true';
         const exportPath = String(kwargs['export-canvas'] || '').trim();
         const dumpArg = kwargs['export-page'];
