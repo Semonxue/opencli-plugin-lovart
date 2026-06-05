@@ -30,10 +30,10 @@ cli({
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
-    // Open a tab to harvest the usertoken cookie, but don't pre-nav to the
-    // homepage — the queryProject API uses a relative path, so we hit it
-    // directly from the blank tab.
-    navigateBefore: true,
+    // Pre-nav to the homepage so document.cookie can read the domain-scoped
+    // `usertoken` — the queryProject API is then called directly without any
+    // extra page.goto.
+    navigateBefore: 'https://www.lovart.ai',
     args: [
         {
             name: 'projectId',
