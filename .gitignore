@@ -4,6 +4,10 @@
 !package.json
 !package-lock.json
 !*.config.js
+# lib/utils.js is committed: the opencli transpiler only scans the plugin
+# root, not subdirectories, so the .js must be checked in for installs to
+# resolve `import './lib/utils.js'`.
+!lib/utils.js
 # Test files live in tests/ subdir; opencli's scanPluginCommands only
 # scans the plugin root, so .test.js here doesn't pollute the command list.
 !tests/
