@@ -32,15 +32,15 @@ cli({
     description:
         'Show a Lovart project: asset counts and URLs.\n' +
         'Usage:\n' +
-        '  opencli lovart project <id>              # summary\n' +
-        '  opencli lovart project <id> --images     # AI生成的图\n' +
-        '  opencli lovart project <id> --videos     # AI生成的视频\n' +
-        '  opencli lovart project <id> --uploads   # 用户上传的图\n' +
-        '  opencli lovart project <id> --all        # all three above\n' +
-        '  opencli lovart project <id> --all --limit 20   # 前20条\n' +
-        '  opencli lovart project <id> --canvas    # raw canvas JSON\n' +
+        '  opencli lovart project <id>          # summary\n' +
+        '  opencli lovart project <id> --images  # AI生成的图\n' +
+        '  opencli lovart project <id> --videos  # AI生成的视频\n' +
+        '  opencli lovart project <id> --uploads # 用户上传的图\n' +
+        '  opencli lovart project <id> --all     # images + videos + uploads\n' +
+        '  opencli lovart project <id> --all --limit 20  # 前20条\n' +
+        '  opencli lovart project <id> --canvas   # raw canvas JSON\n' +
         '  opencli lovart project <id> --export-canvas f  # save canvas JSON\n' +
-        '  opencli lovart project <id> --dump-page f      # full page debug dump',
+        '  opencli lovart project <id> --dump-page f       # full page debug dump',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
