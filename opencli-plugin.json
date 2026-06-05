@@ -1,6 +1,6 @@
 {
   "name": "lovart",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lovart (lovart.ai) CLI adapter — list projects, read account info",
   "opencli": ">=1.8.2"
 }
