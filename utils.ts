@@ -474,16 +474,6 @@ async function readCanvasFromLocalStorage(
     }
     return null;
 }
-                    }
-                }
-            return raw ?? null;
-        } catch {
-            return null;
-        }
-    }
-
-    return null;
-}
 
 async function readImagesFromDOM(
     page: any,
