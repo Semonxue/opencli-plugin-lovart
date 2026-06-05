@@ -5,14 +5,11 @@
  * to extract image/video/group counts and URLs.
  *
  * Flags:
- *   <id>              → one-line summary (name + asset counts)
- *   --images          → AI-generated images
- *   --videos          → AI-generated videos
- *   --uploads         → User uploads
- *   --all             → all of the above combined
+ *   <id>              → list all assets (default)
+ *   --type <kind>     → filter: image | video | upload | all
  *   --canvas          → raw canvas JSON
  *   --export-canvas f → write full canvas JSON to file
- *   --dump-page f     → write full page state (debug)
+ *   --export-page f   → write full page state (debug)
  *
  * Auth: `usertoken` cookie forwarded as `token` header.
  */
@@ -42,19 +39,11 @@ cli({
             help: '32-char hex project ID (from opencli lovart projects or canvas URL).',
         },
         {
-            name: 'images',
-            default: false,
-            help: 'List AI-generated images. Pass true to enable: --images true',
-        },
-        {
-            name: 'videos',
-            default: false,
-            help: 'List AI-generated videos. Pass true to enable: --videos true',
-        },
-        {
-            name: 'uploads',
-            default: false,
-            help: 'List user uploads. Pass true to enable: --uploads true',
+            name: 'type',
+            default: 'all',
+            type: 'string',
+            choices: ['all', 'image', 'video', 'upload'],
+            help: 'Asset type to list. Default: all (lists everything).',
         },
         {
             name: 'canvas',
@@ -69,12 +58,12 @@ cli({
         },
         {
             name: 'limit',
-            default: 0,
+            default: 10,
             type: 'int',
-            help: 'Max asset rows to list (0 = unlimited). Use with --images/--videos/--uploads/--all.',
+            help: 'Max asset rows to list.',
         },
         {
-            name: 'dump-page',
+            name: 'export-page',
             default: '',
             type: 'string',
             help: 'Path to dump all raw page state for debugging.',
@@ -85,13 +74,10 @@ cli({
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const showImages = kwargs.images === true || kwargs.images === 'true';
-        const showVideos = kwargs.videos === true || kwargs.videos === 'true';
-        const showUploads = kwargs.uploads === true || kwargs.uploads === 'true';
-        const showAll = kwargs.all === true || kwargs.all === 'true';
+        const assetType = String(kwargs.type || 'all').toLowerCase();
         const showCanvas = kwargs.canvas === true || kwargs.canvas === 'true';
         const exportPath = String(kwargs['export-canvas'] || '').trim();
-        const dumpArg = kwargs['dump-page'];
+        const dumpArg = kwargs['export-page'];
         const dumpPath = (typeof dumpArg === 'string' && dumpArg.trim()) ? dumpArg.trim() : '';
         const limit = Number(kwargs.limit) || 0;
 
@@ -141,7 +127,10 @@ cli({
             }];
         }
 
-        const showAny = showImages || showVideos || showUploads || showAll;
+        const showAll = assetType === 'all';
+        const showImages = showAll || assetType === 'image';
+        const showVideos = showAll || assetType === 'video';
+        const showUploads = showAll || assetType === 'upload';
 
         // Build asset rows
         const rows: Array<{ type: string; size: string; url: string }> = [];
@@ -155,19 +144,19 @@ cli({
 
         const assetRows: Array<{ type: string; size: string; url: string }> = [];
 
-        if (showAll || showImages) {
+        if (showImages) {
             for (const a of result.genImages) {
                 assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🖼️', size: fmtSize(a.w, a.h), url: a.url });
             }
         }
 
-        if (showAll || showVideos) {
+        if (showVideos) {
             for (const a of result.genVideos) {
                 assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🎬', size: fmtSize(a.w, a.h), url: a.url });
             }
         }
 
-        if (showAll || showUploads) {
+        if (showUploads) {
             for (const a of result.userImages) {
                 assetRows.push({ type: KIND_EMOJI[a.kind] ?? '📷', size: fmtSize(a.w, a.h), url: a.url });
             }
@@ -176,8 +165,8 @@ cli({
         // Apply limit if specified
         const finalRows = limit > 0 ? [...summary, ...assetRows.slice(0, limit)] : [...summary, ...assetRows];
 
-        // If no asset flags, just return the summary row
-        return showAny ? finalRows : summary;
+        // When --type filters, drop the summary row so the output is just the filtered assets.
+        return showAll ? finalRows : assetRows.slice(0, limit > 0 ? limit : assetRows.length);
     },
 });
 
