@@ -330,10 +330,10 @@ export async function readLovartProject(
     // canvas data when the session is on the canvas route (set-cookie + session state).
     const canvasUrl = `https://www.lovart.ai/canvas?projectId=${projectId}`;
     await page.goto(canvasUrl);
-    // Wait for the canvas to load by checking for tldraw container
-    await page.wait({ selector: '[data-testid="avatar-trigger"]', timeoutMs: 8000 });
-    // Extra wait for the studio to hydrate canvas data
-    await page.wait(2000);
+    // Wait for the canvas page to fully load (use body which is always present)
+    await page.wait({ selector: 'body', timeoutMs: 8000 });
+    // Extra wait for the studio to hydrate canvas data from server
+    await page.wait(3000);
 
     const result = unwrapEvaluateResult<{
         ok: boolean;
