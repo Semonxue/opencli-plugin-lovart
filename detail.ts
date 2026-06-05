@@ -145,7 +145,7 @@ cli({
         const summary: Array<{ type: string; size: string; url: string }> = [{
             type: `📦 ${result.projectName}`,
             size: assetSummary,
-            url: '',
+            url: result.url,
         }];
 
         if (!showList) return summary;

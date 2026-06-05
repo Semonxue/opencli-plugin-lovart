@@ -294,6 +294,7 @@ export interface LovartAsset {
 export interface LovartProjectDetail {
     projectId: string;
     projectName: string;
+    url: string;
     projectType: number;
     version: string;
     isValidProject: boolean;
@@ -458,6 +459,7 @@ export async function readLovartProject(
     return {
         projectId: d.projectId || projectId,
         projectName: d.projectName ?? '',
+        url: `https://www.lovart.ai/canvas?projectId=${d.projectId || projectId}`,
         projectType: d.projectType ?? 3,
         version: d.version ?? '',
         isValidProject: false,
