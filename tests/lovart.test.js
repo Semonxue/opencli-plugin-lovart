@@ -17,6 +17,7 @@ import {
     parseMeRows,
     decompressCanvasData,
     parseCanvasAssets,
+    resolveListKind,
 } from './utils.js';
 import './me.js';
 import './projects.js';
@@ -154,6 +155,37 @@ describe('parseCanvasAssets', () => {
     });
 });
 
+describe('resolveListKind', () => {
+    it('returns "" for empty / nullish input (caller treats it as summary-only)', () => {
+        expect(resolveListKind('')).toBe('');
+        expect(resolveListKind(undefined)).toBe('');
+        expect(resolveListKind(null)).toBe('');
+    });
+
+    it('passes through canonical singular forms unchanged', () => {
+        expect(resolveListKind('all')).toBe('all');
+        expect(resolveListKind('image')).toBe('image');
+        expect(resolveListKind('video')).toBe('video');
+        expect(resolveListKind('upload')).toBe('upload');
+    });
+
+    it('maps common plural spellings to the canonical kind', () => {
+        expect(resolveListKind('images')).toBe('image');
+        expect(resolveListKind('videos')).toBe('video');
+        expect(resolveListKind('uploads')).toBe('upload');
+    });
+
+    it('is case-insensitive', () => {
+        expect(resolveListKind('IMAGE')).toBe('image');
+        expect(resolveListKind('Videos')).toBe('video');
+    });
+
+    it('returns "" (silent fallback) for unknown values', () => {
+        expect(resolveListKind('xyz')).toBe('');
+        expect(resolveListKind('alll')).toBe('');
+    });
+});
+
 // ---------------------------------------------------------------------------
 // 2. Command metadata — lock the public schema so accidental edits surface.
 // ---------------------------------------------------------------------------
@@ -172,7 +204,7 @@ describe('lovart/project metadata', () => {
     const cmd = getRegistry().get('lovart/project');
 
     it('is registered with the expected columns', () => {
-        expect(cmd.columns).toEqual(['type', 'size', 'url']);
+        expect(cmd.columns).toEqual(['type', 'size', 'info', 'url']);
     });
 
     it('declares the documented args (--list, --canvas, --export-canvas, --limit, --export-page)', () => {
@@ -217,6 +249,7 @@ describe('lovart/version command', () => {
     it('returns the manifest version without touching a page', async () => {
         const cmd = getRegistry().get('lovart/version');
         const rows = await cmd.func(undefined, {});
-        expect(rows).toEqual([{ name: 'lovart', version: '0.1.1' }]);
+        const { version } = JSON.parse(await import('fs/promises').then(m => m.readFile('./opencli-plugin.json', 'utf-8')));
+        expect(rows).toEqual([{ name: 'lovart', version }]);
     });
 });

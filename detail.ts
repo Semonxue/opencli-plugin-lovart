@@ -71,7 +71,7 @@ cli({
             help: 'Path to dump all raw page state for debugging.',
         },
     ],
-    columns: ['type', 'size', 'url'],
+    columns: ['type', 'size', 'info', 'url'],
     func: async (page: any, kwargs: any) => {
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
@@ -115,6 +115,14 @@ cli({
         if (gc > 0) parts.push(`${gc} group`);
         const assetSummary = parts.join(' · ') || 'empty';
 
+        // Summary row first (always shown)
+        const summaryRow = (): { type: string; size: string; info: string; url: string } => ({
+            type: `📦 ${result.projectName}`,
+            size: assetSummary,
+            info: `${result.projectId} · type=${result.projectType}`,
+            url: result.url,
+        });
+
         // --canvas: raw JSON output
         if (showCanvas) {
             if (!result.canvasDataV1) throw new Error('Canvas data is empty.');
@@ -125,6 +133,7 @@ cli({
             return [{
                 type: `📦 ${result.projectName} · ${assetSummary}`,
                 size: exportPath ? `saved → ${exportPath}` : '',
+                info: `${result.projectId} · type=${result.projectType}`,
                 url: JSON.stringify(result.canvasDataV1, null, 2),
             }];
         }
@@ -137,6 +146,7 @@ cli({
             return [{
                 type: `📦 ${result.projectName} · ${assetSummary}`,
                 size: 'canvas saved',
+                info: `${result.projectId} · type=${result.projectType}`,
                 url: exportPath,
             }];
         }
@@ -148,32 +158,27 @@ cli({
         const showVideos = showList && (showAll || listKind === 'video');
         const showUploads = showList && (showAll || listKind === 'upload');
 
-        // Summary row first (always shown)
-        const summary: Array<{ type: string; size: string; url: string }> = [{
-            type: `📦 ${result.projectName}`,
-            size: assetSummary,
-            url: result.url,
-        }];
+        const summary: Array<{ type: string; size: string; info: string; url: string }> = [summaryRow()];
 
         if (!showList) return summary;
 
-        const assetRows: Array<{ type: string; size: string; url: string }> = [];
+        const assetRows: Array<{ type: string; size: string; info: string; url: string }> = [];
 
         if (showImages) {
             for (const a of result.genImages) {
-                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🖼️', size: fmtSize(a.w, a.h), url: a.url });
+                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🖼️', size: fmtSize(a.w, a.h), info: a.kind, url: a.url });
             }
         }
 
         if (showVideos) {
             for (const a of result.genVideos) {
-                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🎬', size: fmtSize(a.w, a.h), url: a.url });
+                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🎬', size: fmtSize(a.w, a.h), info: a.kind, url: a.url });
             }
         }
 
         if (showUploads) {
             for (const a of result.userImages) {
-                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '📷', size: fmtSize(a.w, a.h), url: a.url });
+                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '📷', size: fmtSize(a.w, a.h), info: a.kind, url: a.url });
             }
         }
 

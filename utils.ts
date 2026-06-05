@@ -278,6 +278,35 @@ function zlibGunzip(buf: Buffer): Buffer {
     return zlib.inflateSync(buf);
 }
 
+/**
+ * Valid kinds accepted by the `--list` flag of `project`.
+ * Kept as a Set so membership checks are O(1).
+ */
+export const LIST_KINDS: ReadonlySet<string> = new Set(['all', 'image', 'video', 'upload']);
+
+/**
+ * Map of common plural spellings to the canonical singular kind.
+ * Lets users type `--list images` (or `videos` / `uploads`) without
+ * having to remember the singular form.
+ */
+export const LIST_ALIASES: Readonly<Record<string, string>> = {
+    images: 'image',
+    videos: 'video',
+    uploads: 'upload',
+};
+
+/**
+ * Normalize a raw `--list` value to a canonical kind, or '' when the
+ * input is missing / unrecognized. Returning '' lets the caller treat
+ * it as "summary only" without further branching.
+ */
+export function resolveListKind(raw: unknown): string {
+    const v = String(raw ?? '').toLowerCase();
+    if (!v) return '';
+    const normalized = LIST_ALIASES[v] ?? v;
+    return LIST_KINDS.has(normalized) ? normalized : '';
+}
+
 // ---------------------------------------------------------------------------
 // Project detail (queryProject)
 // ---------------------------------------------------------------------------
