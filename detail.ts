@@ -111,10 +111,11 @@ cli({
         const showAll = Boolean(kwargs.all);
         const showCanvas = Boolean(kwargs.canvas);
         const exportPath = String(kwargs.exportCanvas || '').trim();
-        const dumpPath = String(kwargs.dumpPage || '').trim();
+        const dumpArg = kwargs.dumpPage;
+        const dumpPath = (typeof dumpArg === 'string' && dumpArg.trim()) ? dumpArg.trim() : '';
         const limit = Number(kwargs.limit) || 0;
 
-        // --dump-page: capture everything and exit
+        // --dump-page: capture everything and exit (only if path is provided)
         if (dumpPath) {
             await dumpLovartProjectPage(page, projectId, dumpPath);
             return [{ type: 'debug', size: '', url: `Dumped → ${dumpPath}` }];
