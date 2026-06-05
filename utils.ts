@@ -568,7 +568,7 @@ async function readImagesFromDOM(
  *
  * tldraw v2 shape store: document.store = { 'shape:<id>': { id, type, props, ... } }
  */
-function parseCanvasAssets(canvasDataV1: LovartCanvasDataV1 | null): {
+export function parseCanvasAssets(canvasDataV1: LovartCanvasDataV1 | null): {
     genImages: LovartAsset[];
     genVideos: LovartAsset[];
     userImages: LovartAsset[];

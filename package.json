@@ -1,9 +1,15 @@
 {
   "name": "opencli-plugin-lovart",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "Lovart (lovart.ai) CLI adapter — list projects, read account info",
   "peerDependencies": {
     "@jackwener/opencli": ">=1.8.2"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  },
+  "scripts": {
+    "test": "vitest run"
   }
 }

@@ -40,11 +40,10 @@ cli({
         const limit = Number(kwargs.limit);
         const order = String(kwargs.order ?? 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
         const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 5;
-        // The API supports pagination; fetch a generous slice and let the
-        // caller slice via --limit. No more grid lazy-load surprises.
-        const rows = await readLovartProjects(page, { limit: 200 });
-        const sorted = sortProjectsByUpdated(rows, order);
-        return sorted.slice(0, safeLimit);
+        // API returns pages in desc order by default — fetch just what we
+        // need (capped at LIST_PAGE_SIZE=30 per request) and reverse for asc.
+        const rows = await readLovartProjects(page, { limit: safeLimit });
+        return order === 'asc' ? rows.reverse() : rows;
     },
 });
 
