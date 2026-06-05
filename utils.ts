@@ -406,7 +406,14 @@ export async function readLovartProject(
         canvasDataV1 = await readCanvasFromLocalStorage(page, projectId);
     }
 
-    const images = canvasDataV1 ? parseLovartProjectImages(canvasDataV1) : [];
+    // If still null, try extracting from DOM (tldraw canvas renders images in the page)
+    let images: LovartProjectImage[] = canvasDataV1
+        ? parseLovartProjectImages(canvasDataV1)
+        : [];
+
+    if (images.length === 0) {
+        images = await readImagesFromDOM(page, projectId);
+    }
 
     return {
         projectId: d.projectId || projectId,
@@ -431,7 +438,7 @@ async function readCanvasFromLocalStorage(
     page: any,
     projectId: string,
 ): Promise<LovartCanvasDataV1 | null> {
-    const result = unwrapEvaluateResult<string | null>(await page.evaluate(
+    const raw = unwrapEvaluateResult<string | null>(await page.evaluate(
         (pid: string) => {
             try {
                 // Try the tldraw localStorage key pattern
@@ -451,6 +458,75 @@ async function readCanvasFromLocalStorage(
             } catch {
                 return null;
             }
+        },
+        projectId,
+    ));
+
+    if (!raw) return null;
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && (parsed as any).tldrawSnapshot) {
+            return parsed as LovartCanvasDataV1;
+        }
+    } catch {
+        // Not JSON
+    }
+    return null;
+}
+                    }
+                }
+            return raw ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    return null;
+}
+
+async function readImagesFromDOM(
+    page: any,
+    projectId: string,
+): Promise<LovartProjectImage[]> {
+    const images: LovartProjectImage[] = [];
+
+    // Collect all image URLs from <img> tags rendered by the tldraw canvas
+    const imgResults = unwrapEvaluateResult<Array<{ src: string; width: number; height: number }>>(
+        await page.evaluate(`
+            () => {
+                const imgs = Array.from(document.querySelectorAll('img'));
+                return imgs.map(img => ({
+                    src: img.currentSrc || img.src,
+                    width: img.naturalWidth || img.width || 0,
+                    height: img.naturalHeight || img.height || 0,
+                }));
+            }
+        `),
+    );
+
+    if (Array.isArray(imgResults)) {
+        for (const img of imgResults) {
+            if (!img.src || !img.src.startsWith('http')) continue;
+            // Determine type from URL path
+            let type: LovartProjectImage['type'] = 'unknown';
+            if (img.src.includes('/artifacts/generator/')) type = 'generator';
+            else if (img.src.includes('/artifacts/user/')) type = 'user';
+            else if (img.src.includes('/artifacts/agent/')) type = 'agent';
+            else continue; // skip non-artifact images
+
+            images.push({
+                shapeId: '',
+                url: img.src,
+                w: img.width,
+                h: img.height,
+                type,
+            });
+        }
+    }
+
+    return images;
+}
         },
         projectId,
     ));
