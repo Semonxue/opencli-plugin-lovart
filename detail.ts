@@ -43,27 +43,22 @@ cli({
         },
         {
             name: 'images',
-            default: false,
             help: 'List AI-generated images.',
         },
         {
             name: 'videos',
-            default: false,
             help: 'List AI-generated videos.',
         },
         {
             name: 'uploads',
-            default: false,
             help: 'List user uploads.',
         },
         {
             name: 'all',
-            default: false,
             help: 'List all assets.',
         },
         {
             name: 'canvas',
-            default: false,
             help: 'Show raw canvas JSON.',
         },
         {
@@ -90,11 +85,11 @@ cli({
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const showImages = kwargs.images === true || kwargs.images === 'true';
-        const showVideos = kwargs.videos === true || kwargs.videos === 'true';
-        const showUploads = kwargs.uploads === true || kwargs.uploads === 'true';
-        const showAll = kwargs.all === true || kwargs.all === 'true';
-        const showCanvas = kwargs.canvas === true || kwargs.canvas === 'true';
+        const showImages = kwargs.images === true;
+        const showVideos = kwargs.videos === true;
+        const showUploads = kwargs.uploads === true;
+        const showAll = kwargs.all === true;
+        const showCanvas = kwargs.canvas === true;
         const exportPath = String(kwargs['export-canvas'] || '').trim();
         const dumpArg = kwargs['dump-page'];
         const dumpPath = (typeof dumpArg === 'string' && dumpArg.trim()) ? dumpArg.trim() : '';
