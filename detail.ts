@@ -6,11 +6,11 @@
  *
  * Flags:
  *   <id>              → one-line summary (name + asset counts)
- *   --images          → AI-generated images (gen-image shapes from /artifacts/generator/)
- *   --videos          → AI-generated videos (gen-video shapes, MP4 URLs)
- *   --uploads         → User uploads (user-image shapes from /artifacts/user/)
- *   --all             → all of the above combined
- *   --canvas          → raw canvas JSON
+ *   --images true     → AI-generated images (gen-image shapes from /artifacts/generator/)
+ *   --videos true     → AI-generated videos (gen-video shapes, MP4 URLs)
+ *   --uploads true    → User uploads (user-image shapes from /artifacts/user/)
+ *   --all true        → all of the above combined
+ *   --canvas true     → raw canvas JSON
  *   --export-canvas f → write full canvas JSON to file
  *   --dump-page f     → write full page state (debug)
  *
@@ -70,30 +70,6 @@ cli({
             default: 'false',
             type: 'string',
             help: 'Show raw canvas JSON. Usage: --canvas true',
-        },
-        {
-            name: 'videos',
-            default: false,
-            type: 'boolean',
-            help: 'List AI-generated videos (c-video shapes, MP4 URLs).',
-        },
-        {
-            name: 'uploads',
-            default: false,
-            type: 'boolean',
-            help: 'List user uploads (c-image from /artifacts/user/).',
-        },
-        {
-            name: 'all',
-            default: false,
-            type: 'boolean',
-            help: 'List all assets: images + videos + uploads.',
-        },
-        {
-            name: 'canvas',
-            default: false,
-            type: 'boolean',
-            help: 'Show raw canvasDataV1 JSON.',
         },
         {
             name: 'export-canvas',
