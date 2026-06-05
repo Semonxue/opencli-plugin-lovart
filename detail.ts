@@ -78,10 +78,17 @@ cli({
 
         const listKindRaw = String(kwargs.list || '').toLowerCase();
         const validKinds = new Set(['all', 'image', 'video', 'upload']);
-        // Unknown values fall back to "summary only" rather than blowing up
-        // — the choice validator is intentionally absent so empty/default
-        // doesn't trip a hard error.
-        const listKind = validKinds.has(listKindRaw) ? listKindRaw : '';
+        // Accept common plurals so `--list images` works the way most users
+        // instinctively type it. Unknown values fall back to "summary only"
+        // rather than blowing up — the choice validator is intentionally
+        // absent so empty/default doesn't trip a hard error.
+        const aliases: Record<string, string> = {
+            images: 'image',
+            videos: 'video',
+            uploads: 'upload',
+        };
+        const normalized = aliases[listKindRaw] ?? listKindRaw;
+        const listKind = validKinds.has(normalized) ? normalized : '';
         const showCanvas = kwargs.canvas === true || kwargs.canvas === 'true';
         const exportPath = String(kwargs['export-canvas'] || '').trim();
         const dumpArg = kwargs['export-page'];
