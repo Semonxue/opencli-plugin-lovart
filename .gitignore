@@ -1,0 +1,14 @@
+# Build artifacts (opencli transpiles .ts -> .js at install time).
+*.js
+!opencli-plugin.json
+!package.json
+!package-lock.json
+!*.config.js
+
+# Dependencies
+node_modules/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
