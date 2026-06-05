@@ -44,32 +44,27 @@ cli({
         {
             name: 'images',
             default: false,
-            type: 'boolean',
-            help: 'List AI-generated images. (no value needed)',
+            help: 'List AI-generated images.',
         },
         {
             name: 'videos',
             default: false,
-            type: 'boolean',
-            help: 'List AI-generated videos. (no value needed)',
+            help: 'List AI-generated videos.',
         },
         {
             name: 'uploads',
             default: false,
-            type: 'boolean',
-            help: 'List user uploads. (no value needed)',
+            help: 'List user uploads.',
         },
         {
             name: 'all',
             default: false,
-            type: 'boolean',
-            help: 'List all assets. (no value needed)',
+            help: 'List all assets.',
         },
         {
             name: 'canvas',
             default: false,
-            type: 'boolean',
-            help: 'Show raw canvas JSON. (no value needed)',
+            help: 'Show raw canvas JSON.',
         },
         {
             name: 'export-canvas',
