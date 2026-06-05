@@ -432,31 +432,26 @@ async function readCanvasFromLocalStorage(
     projectId: string,
 ): Promise<LovartCanvasDataV1 | null> {
     const result = unwrapEvaluateResult<string | null>(await page.evaluate(
-        `(projectId) => {
+        (pid: string) => {
             try {
                 // Try the tldraw localStorage key pattern
-                const key = 'tldraw/' + projectId;
-                const raw = localStorage.getItem(key);
-                if (raw) return raw;
-                // Try a wildcard search for any key containing the projectId
-                for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k && k.includes(projectId)) {
-                        return localStorage.getItem(k);
+                const key = 'tldraw/' + pid;
+                let raw = localStorage.getItem(key);
+                if (!raw) {
+                    // Wildcard search for any key containing the projectId
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const k = localStorage.key(i);
+                        if (k && k.includes(pid)) {
+                            raw = localStorage.getItem(k);
+                            break;
+                        }
                     }
                 }
-                // Try sessionStorage too
-                for (let i = 0; i < sessionStorage.length; i++) {
-                    const k = sessionStorage.key(i);
-                    if (k && k.includes(projectId)) {
-                        return sessionStorage.getItem(k);
-                    }
-                }
-                return null;
-            } catch (e) {
+                return raw ?? null;
+            } catch {
                 return null;
             }
-        }`,
+        },
         projectId,
     ));
 
