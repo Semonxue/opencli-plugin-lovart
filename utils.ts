@@ -346,45 +346,33 @@ export interface TldrawShape {
 }
 
 /**
- * Call `canva/project/queryProject` and parse the canvasDataV1 JSON blob.
+ * Fetch `usertoken` from the current page's cookies and call the
+ * `canva/project/queryProject` API directly from node (no page.goto needed).
  *
- * Auth: `usertoken` cookie forwarded as `token` header (same as `projects`).
- * The API retries once on 401 because Lovart sometimes sends a stale cookie
- * that gets refreshed by the first 401.
+ * Auth: `usertoken` cookie forwarded as `token` header.
+ * The API retries once on 401 because Lovart sometimes sends a stale cookie.
  */
-export async function readLovartProject(
+async function queryProjectFromNode(
     page: any,
     projectId: string,
-): Promise<LovartProjectDetail> {
-    // Navigate to the canvas page — Lovart's queryProject API only returns
-    // canvas data when the session is on the canvas route (set-cookie + session state).
-    const canvasUrl = `https://www.lovart.ai/canvas?projectId=${projectId}`;
-    await page.goto(canvasUrl);
-    // Wait for the canvas page to fully load
-    await page.wait({ selector: 'body', timeoutMs: 8000 });
-    // Give the studio time to hydrate
-    await page.wait(3000);
-
-    // Try the API first, then fall back to reading from localStorage/tldraw state
-    const result = unwrapEvaluateResult<{
-        ok: boolean;
-        data: {
-            canvas: string | null;
-            projectId: string;
-            projectName: string;
-            projectType: number;
-            version: string;
-            userId: string;
-            validProjectId: string;
-        };
-        error?: string;
-    }>(await page.evaluate(
-        `
+): Promise<{
+    ok: boolean;
+    data?: {
+        canvas: string | null;
+        projectId: string;
+        projectName: string;
+        projectType: number;
+        version: string;
+        userId: string;
+        validProjectId: string;
+    };
+    error?: string;
+}> {
+    const wrapped = await page.evaluate(`
         (async () => {
             const tok = (document.cookie.match(/usertoken=([^;]+)/) || [])[1] || '';
             if (!tok) return { ok: false, error: 'usertoken cookie missing' };
-
-            // Retry-once pattern mirrors what the studio frontend does (code 401).
+            const body = JSON.stringify({ projectId: ${JSON.stringify(projectId)} });
             for (let attempt = 0; attempt < 2; attempt++) {
                 try {
                     const resp = await fetch('/api/canva/project/queryProject', {
@@ -394,22 +382,35 @@ export async function readLovartProject(
                             'token': tok,
                             'x-language': 'zh',
                         },
-                        body: JSON.stringify({ projectId: ${JSON.stringify(projectId)} }),
+                        body,
                         credentials: 'include',
                     });
-                    const body = await resp.json();
-                    if (body?.code === 0 || body?.code === '0') {
-                        return { ok: true, data: body.data };
+                    const json = await resp.json();
+                    if (json?.code === 0 || json?.code === '0') {
+                        return { ok: true, data: json.data };
                     }
-                    if (body?.code === 401 && attempt === 0) continue; // retry once
-                    return { ok: false, error: 'API code ' + body?.code + ' ' + (body?.msg || ''), data: body?.data };
+                    if (json?.code === 401 && attempt === 0) continue;
+                    return { ok: false, error: 'API code ' + json?.code + ' ' + (json?.msg || ''), data: json?.data };
                 } catch (e) {
                     return { ok: false, error: 'fetch failed: ' + String(e && e.message || e) };
                 }
             }
         })()
-    `,
-    ));
+    `);
+    return unwrapEvaluateResult(wrapped);
+}
+
+/**
+ * Call `canva/project/queryProject` and parse the canvasDataV1 JSON blob.
+ *
+ * No browser navigation needed — extracts the usertoken from the current page
+ * and calls the API directly from node.
+ */
+export async function readLovartProject(
+    page: any,
+    projectId: string,
+): Promise<LovartProjectDetail> {
+    const result = await queryProjectFromNode(page, projectId);
 
     if (!result || !result.ok) {
         throw new AuthRequiredError(
@@ -418,7 +419,7 @@ export async function readLovartProject(
         );
     }
 
-    const d = result.data;
+    const d = result.data!;
     // canvas field may be:
     //   - null/empty  → new or empty project
     //   - SHAKKERDATA://<base64-gzip> → compressed canvas JSON
