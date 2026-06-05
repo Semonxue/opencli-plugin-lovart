@@ -274,6 +274,8 @@ export interface LovartProjectDetail {
     /** canvasDataV1 if the canvas was non-empty, null otherwise */
     canvasDataV1: LovartCanvasDataV1 | null;
     images: LovartProjectImage[];
+    videoCount: number;
+    groupCount: number;
 }
 
 export interface LovartCanvasDataV1 {
@@ -415,6 +417,9 @@ export async function readLovartProject(
         images = await readImagesFromDOM(page, projectId);
     }
 
+    // Also try to get video and group counts from DOM
+    const domStats = await readVideoAndGroupCountsFromDOM(page);
+
     return {
         projectId: d.projectId || projectId,
         projectName: d.projectName ?? '',
@@ -427,6 +432,8 @@ export async function readLovartProject(
         isNewProject: false,
         canvasDataV1,
         images,
+        videoCount: domStats.videoCount,
+        groupCount: domStats.groupCount,
     };
 }
 
@@ -565,4 +572,152 @@ export function parseLovartProjectImages(canvasDataV1: LovartCanvasDataV1): Lova
     }
 
     return images;
+}
+
+
+/**
+ * Dump every scrapable piece of canvas page state to a JSON file.
+ *
+ * This is a debug/analysis tool — it collects:
+ *   1. localStorage keys+values (filtered to lovart domain)
+ *   2. sessionStorage keys+values
+ *   3. window variables that look like state (REDUX, __INITIAL_STATE__, etc.)
+ *   4. DOM snapshot: tag counts, data attributes, aria labels
+ *   5. The raw queryProject API response (full body)
+ *   6. Network request metadata (via Performance API)
+ */
+export async function dumpLovartProjectPage(
+    page: any,
+    projectId: string,
+    outputPath: string,
+): Promise<void> {
+    const canvasUrl = `https://www.lovart.ai/canvas?projectId=${projectId}`;
+    await page.goto(canvasUrl);
+    await page.wait({ selector: 'body', timeoutMs: 8000 });
+    await page.wait(3000); // let studio hydrate
+
+    const fs = await import('fs');
+
+    const dump = unwrapEvaluateResult<Record<string, unknown>>(await page.evaluate(
+        (pid: string) => {
+            const result: Record<string, unknown> = {};
+
+            // --- localStorage ---
+            const ls: Record<string, string> = {};
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i) || '';
+                    const v = localStorage.getItem(k) || '';
+                    ls[k] = v.length > 2000 ? v.slice(0, 2000) + '... [TRUNCATED]' : v;
+                }
+            } catch { ls['_error'] = 'inaccessible'; }
+            result['localStorage'] = ls;
+
+            // --- sessionStorage ---
+            const ss: Record<string, string> = {};
+            try {
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const k = sessionStorage.key(i) || '';
+                    const v = sessionStorage.getItem(k) || '';
+                    ss[k] = v.length > 2000 ? v.slice(0, 2000) + '... [TRUNCATED]' : v;
+                }
+            } catch { ss['_error'] = 'inaccessible'; }
+            result['sessionStorage'] = ss;
+
+            // --- window globals that look like state ---
+            const stateGlobals: Record<string, unknown> = {};
+            const stateKeys = [
+                '__REDUX__', '__STATE__', '__INITIAL_STATE__',
+                '__NEXT_DATA__', '__NUXT__', '__TLDRAW__',
+                'reduxStore', 'store', '__canvas__',
+                '__tldraw__', '__lovart__', '__studio__',
+            ];
+            for (const key of stateKeys) {
+                try {
+                    const val = (window as any)[key];
+                    if (val !== undefined) {
+                        const str = typeof val === 'string' ? val : JSON.stringify(val);
+                        stateGlobals[key] = str.length > 3000 ? str.slice(0, 3000) + '... [TRUNCATED]' : str;
+                    }
+                } catch { /* skip */ }
+            }
+            result['stateGlobals'] = stateGlobals;
+
+            // --- DOM snapshot ---
+            const allEls = document.querySelectorAll('*');
+            const tagCounts: Record<string, number> = {};
+            allEls.forEach(el => {
+                const tag = el.tagName.toLowerCase();
+                tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+            });
+
+            const dataAttrs = new Set<string>();
+            const ariaAttrs = new Set<string>();
+            allEls.forEach(el => {
+                Array.from(el.attributes).forEach(attr => {
+                    if (attr.name.startsWith('data-')) dataAttrs.add(attr.name);
+                    if (attr.name.startsWith('aria-')) ariaAttrs.add(attr.name);
+                });
+            });
+
+            result['domStats'] = {
+                totalElements: allEls.length,
+                tagCounts,
+                dataAttributes: Array.from(dataAttrs).sort(),
+                ariaAttributes: Array.from(ariaAttrs).sort(),
+                imgs: document.querySelectorAll('img').length,
+                videos: document.querySelectorAll('video').length,
+                iframes: document.querySelectorAll('iframe').length,
+                svgs: document.querySelectorAll('svg').length,
+                tldrawElements: Array.from(allEls)
+                    .filter(el => Array.from(el.attributes).some(a => a.name.startsWith('data-tldraw')))
+                    .map(el => ({
+                        tag: el.tagName,
+                        attrs: Array.from(el.attributes)
+                            .map(a => ({ n: a.name, v: a.value.slice(0, 100) })),
+                    })),
+            };
+
+            // --- Performance API entries (recent fetch/XHR) ---
+            try {
+                const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+                result['performanceEntries'] = entries
+                    .filter(e => e.name.includes('lovart') || e.name.includes('canva') || e.name.includes('canas'))
+                    .map(e => ({
+                        name: e.name.slice(0, 200),
+                        type: e.initiatorType,
+                        duration: Math.round(e.duration),
+                    }));
+            } catch { result['performanceEntries'] = []; }
+
+            return result;
+        },
+        projectId,
+    ));
+
+    // --- queryProject API (raw full response) ---
+    const apiRaw = unwrapEvaluateResult<Record<string, unknown>>(await page.evaluate(
+        async (pid: string) => {
+            const tok = (document.cookie.match(/usertoken=([^;]+)/) || [])[1] || '';
+            if (!tok) return { error: 'no usertoken' };
+            try {
+                const resp = await fetch('/api/canva/project/queryProject', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'token': tok, 'x-language': 'zh' },
+                    body: JSON.stringify({ projectId: pid }),
+                    credentials: 'include',
+                });
+                const body = await resp.json();
+                return { status: resp.status, code: body?.code, msg: body?.msg, data: body?.data };
+            } catch (e: any) {
+                return { error: e?.message || String(e) };
+            }
+        },
+        projectId,
+    ));
+
+    dump['queryProject_raw'] = apiRaw;
+
+    fs.writeFileSync(outputPath, JSON.stringify(dump, null, 2), 'utf-8');
+    console.error(`[dumpLovartProjectPage] Wrote ${outputPath}`);
 }

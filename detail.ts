@@ -15,7 +15,7 @@
  * Project URL pattern: `https://www.lovart.ai/canvas?projectId=<id>`
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { readLovartProject, parseLovartProjectImages } from './utils.js';
+import { readLovartProject, parseLovartProjectImages, dumpLovartProjectPage } from './utils.js';
 
 cli({
     site: 'lovart',
@@ -61,6 +61,12 @@ cli({
             type: 'string',
             help: 'Path to write the tldrawSnapshot as a local .json file.',
         },
+        {
+            name: 'dumpPage',
+            default: '',
+            type: 'string',
+            help: 'Path to dump all raw page state (localStorage, sessionStorage, DOM, network) for debugging.',
+        },
     ],
     columns: ['projectId', 'projectName', 'projectType', 'imageCount', 'generatorCount', 'userCount', 'videoCount', 'imageUrl'],
     func: async (page: any, kwargs: any) => {
@@ -70,6 +76,22 @@ cli({
         const includeImages = Boolean(kwargs.images);
         const rawCanvas = Boolean(kwargs.canvas);
         const exportPath = String(kwargs.exportCanvas || '').trim();
+        const dumpPath = String(kwargs.dumpPage || '').trim();
+
+        // --dump-page: capture everything and write to file, then return
+        if (dumpPath) {
+            await dumpLovartProjectPage(page, projectId, dumpPath);
+            return [{
+                projectId,
+                projectName: '',
+                projectType: '',
+                imageCount: 0,
+                generatorCount: 0,
+                userCount: 0,
+                videoCount: 0,
+                imageUrl: `Dumped to ${dumpPath}`,
+            }];
+        }
 
         const result = await readLovartProject(page, projectId);
 
