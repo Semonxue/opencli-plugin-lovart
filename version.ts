@@ -23,6 +23,7 @@ cli({
     access: 'read',
     description: 'Show the plugin version.',
     strategy: Strategy.PUBLIC,
+    example: 'opencli lovart version -f yaml',
     columns: ['name', 'version'],
     func: async () => {
         return [{

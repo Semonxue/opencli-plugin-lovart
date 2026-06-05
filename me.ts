@@ -14,6 +14,7 @@ cli({
     name: 'me',
     access: 'read',
     description: 'Show the logged-in Lovart user identity (name, email, plan, credits).',
+    example: 'opencli lovart me',
     domain: 'www.lovart.ai',
     strategy: Strategy.UI,
     browser: true,

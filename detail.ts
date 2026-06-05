@@ -27,6 +27,7 @@ cli({
     name: 'project',
     access: 'read',
     description: 'Show a Lovart project: asset counts and URLs. Use --help to see examples.',
+    example: 'opencli lovart project <id> --list all --limit 5 -f yaml',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,

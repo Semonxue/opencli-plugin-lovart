@@ -12,22 +12,31 @@ Strategy: `UI` for `me`, `COOKIE` for `projects` and `project` — Lovart is a R
 ## Install
 
 ```sh
-# from the public repo
-opencli plugin install git@github.com:Semonxue/opencli-plugin-lovart.git
+# Recommended: github: shorthand (clones the public repo)
+opencli plugin install github:Semonxue/opencli-plugin-lovart
 
-# or from a local clone (replace the path with wherever you put it)
+# Or from a local clone (replace the path with wherever you put it)
 opencli plugin install file:///path/to/opencli-plugin-lovart
 ```
 
-Then run `opencli lovart --help` to confirm registration.
+Then run `opencli lovart --help` to confirm registration. **Open a new terminal** if the command isn't found — plugins are discovered at startup.
 
 ## Verify
 
 ```sh
-opencli lovart me                # 1 row: name/email/plan/credits
-opencli lovart projects          # default: 5 most-recently-updated projects
+opencli plugin list                  # confirm "lovart" is installed and at the expected version
+opencli lovart version               # 0.2.0 (or whichever is current)
+opencli lovart me                    # 1 row: name/email/plan/credits
+opencli lovart projects              # default: 5 most-recently-updated projects
 opencli lovart projects --limit 20 --order asc
 opencli lovart projects -f json
+```
+
+## Update
+
+```sh
+opencli plugin update lovart         # update this plugin
+opencli plugin update --all          # update every installed plugin
 ```
 
 `me` opens a Chrome tab (background), navigates to the home page, clicks the avatar trigger, and reads the popover.

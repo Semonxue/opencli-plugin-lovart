@@ -25,6 +25,7 @@ cli({
     name: 'projects',
     access: 'read',
     description: 'List the current Lovart projects (id, url, name, cover, picCount, isFavorite, projectType, updated).',
+    example: 'opencli lovart projects --limit 10 --order desc -f json',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
