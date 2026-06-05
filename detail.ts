@@ -21,8 +21,12 @@ cli({
     name: 'project',
     access: 'read',
     description:
-        'Show a Lovart project: metadata, image counts, and image URL table. ' +
-        'Usage: opencli lovart project <id> [--images] [--canvas] [--export-canvas <file>]',
+        'Show a Lovart project: metadata, image counts, and image URL table.\n' +
+        'Usage:\n' +
+        '  opencli lovart project <id>                  # basic metadata + counts\n' +
+        '  opencli lovart project <id> --images          # per-image URL table\n' +
+        '  opencli lovart project <id> --canvas          # raw canvasDataV1 JSON\n' +
+        '  opencli lovart project <id> --export-canvas f  # write tldrawSnapshot to file.json',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -30,7 +34,8 @@ cli({
         {
             name: 'projectId',
             type: 'string',
-            help: 'The 32-char hex project ID (from project list or canvas URL).',
+            positional: true,
+            help: 'The 32-char hex project ID (from opencli lovart projects or the canvas URL).',
         },
         {
             name: 'images',
