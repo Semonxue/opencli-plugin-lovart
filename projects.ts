@@ -28,6 +28,9 @@ cli({
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
+    // Skip the pre-nav to the homepage — go straight to /projects and let
+    // Lovart's own locale routing redirect to /zh/projects (or /projects).
+    navigateBefore: 'https://www.lovart.ai/projects',
     args: [
         { name: 'limit', type: 'int', default: 5, help: 'Max projects to return (default: 5)' },
         { name: 'order', default: 'desc', choices: ['desc', 'asc'], help: 'Sort by updated time: desc (newest first) or asc (oldest first). Default: desc.' },
