@@ -85,7 +85,7 @@ cli({
             name: 'exportCanvas',
             default: '',
             type: 'string',
-            help: 'Path to write the tldrawSnapshot as a local .json file.',
+            help: 'Path to write the full canvas JSON (canvasDataV1) to a local .json file.',
         },
         {
             name: 'limit',
@@ -137,10 +137,9 @@ cli({
         // --canvas: raw JSON output
         if (showCanvas) {
             if (!result.canvasDataV1) throw new Error('Canvas data is empty.');
-            const snapshot = result.canvasDataV1.tldrawSnapshot;
             if (exportPath) {
                 const fs = await import('fs');
-                fs.writeFileSync(exportPath, JSON.stringify(snapshot, null, 2), 'utf-8');
+                fs.writeFileSync(exportPath, JSON.stringify(result.canvasDataV1, null, 2), 'utf-8');
             }
             return [{
                 type: `📦 ${result.projectName} · ${assetSummary}`,
@@ -152,9 +151,8 @@ cli({
         // --export-canvas: save and return summary (no --canvas)
         if (exportPath) {
             if (!result.canvasDataV1) throw new Error('Canvas data is empty.');
-            const snapshot = result.canvasDataV1.tldrawSnapshot;
             const fs = await import('fs');
-            fs.writeFileSync(exportPath, JSON.stringify(snapshot, null, 2), 'utf-8');
+            fs.writeFileSync(exportPath, JSON.stringify(result.canvasDataV1, null, 2), 'utf-8');
             return [{
                 type: `📦 ${result.projectName} · ${assetSummary}`,
                 size: 'canvas已保存',
