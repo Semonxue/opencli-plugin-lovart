@@ -49,14 +49,15 @@ Pass `--order asc` to flip the sort; pass `--limit N` to change the slice count 
 
 ## `opencli lovart project <id>`
 
-Fetch a single project and return its assets. The first row is a one-line summary (`name · counts`); subsequent rows are the assets themselves.
+Fetch a single project and return its assets. The first row is a one-line summary (`name · counts · info`); subsequent rows are the assets themselves.
 
 ```sh
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a          # default: list all assets (max 10 rows)
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type image
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type video
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type upload
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type all --limit 50
+opencli lovart project <projectId>                  # summary only (no asset list)
+opencli lovart project <projectId> --list all       # summary + all assets
+opencli lovart project <projectId> --list image     # only AI-generated images
+opencli lovart project <projectId> --list video     # only generated videos
+opencli lovart project <projectId> --list upload    # only user uploads
+opencli lovart project <projectId> --list all --limit 50
 ```
 
 **Arguments**
@@ -69,7 +70,7 @@ opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type all --limit 50
 
 | Flag | Description | Default | Choices |
 | --- | --- | --- | --- |
-| `--type` | Asset type to list. | `all` | `all`, `image`, `video`, `upload` |
+| `--list` | List assets: `all` / `image` / `video` / `upload`. Plurals (`images`, `videos`, `uploads`) also accepted. Omit for summary only. | `""` | — |
 | `--canvas` | Show raw canvas JSON. Pass `--canvas true` to enable. | `false` | — |
 | `--export-canvas` | Path to write the full canvas JSON (`canvasDataV1`) to a local `.json` file. | `""` | — |
 | `--limit` | Max asset rows to list. | `10` | — |
@@ -78,23 +79,26 @@ opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type all --limit 50
 **Examples**
 
 ```sh
-# Default: list all assets (images + videos + uploads)
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a
+# Default: summary only
+opencli lovart project <projectId>
 
-# Only user uploads
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type upload
+# List all assets (summary + 10 rows)
+opencli lovart project <projectId> --list all
+
+# Only user uploads (plural also works)
+opencli lovart project <projectId> --list uploads
 
 # Show more rows
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --limit 50
+opencli lovart project <projectId> --list all --limit 50
 
 # Raw canvas JSON
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --canvas true
+opencli lovart project <projectId> --canvas true
 
 # Save canvas JSON to file
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --export-canvas /tmp/canvas.json
+opencli lovart project <projectId> --export-canvas /tmp/canvas.json
 
 # Debug: dump full page state
-opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --export-page /tmp/page-state.json
+opencli lovart project <projectId> --export-page /tmp/page-state.json
 ```
 
 Under the hood the command calls `canva/project/queryProject`, decompresses the `SHAKKERDATA://` canvas blob, and walks the tldraw `document.store` to bucket every `c-image` / `c-video` / `c-group` shape into one of three categories: AI-generated (`/artifacts/generator/`), user uploads (`/artifacts/user/`), or groups. The `usertoken` cookie is the only auth — no page navigation is required.

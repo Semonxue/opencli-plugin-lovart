@@ -240,7 +240,7 @@ describe('lovart/project error path', () => {
         const page = pageEvaluateOnce(() =>
             Promise.resolve({ ok: false, error: 'usertoken cookie missing' }),
         );
-        await expect(cmd.func(page, { projectId: 'b64dcb42263c416286b4848c17e8f7be' }))
+        await expect(cmd.func(page, { projectId: 'a1b2c3d4e5f6789012345678abcdef01' }))
             .rejects.toBeInstanceOf(AuthRequiredError);
     });
 });

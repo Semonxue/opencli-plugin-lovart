@@ -74,7 +74,7 @@ cli({
     columns: ['type', 'size', 'info', 'url'],
     func: async (page: any, kwargs: any) => {
         const projectId = String(kwargs.projectId || '').trim();
-        if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
+        if (!projectId) throw new Error('projectId is required (e.g. a1b2c3d4e5f6789012345678abcdef01)');
 
         const listKindRaw = String(kwargs.list || '').toLowerCase();
         const validKinds = new Set(['all', 'image', 'video', 'upload']);
