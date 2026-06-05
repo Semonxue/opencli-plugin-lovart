@@ -26,11 +26,14 @@ cli({
     site: 'lovart',
     name: 'project',
     access: 'read',
-    description:
-        'Show a Lovart project: asset counts and URLs. Use --help to see examples.',
+    description: 'Show a Lovart project: asset counts and URLs. Use --help to see examples.',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
+    // Open a tab to harvest the usertoken cookie, but don't pre-nav to the
+    // homepage — the queryProject API uses a relative path, so we hit it
+    // directly from the blank tab.
+    navigateBefore: true,
     args: [
         {
             name: 'projectId',
