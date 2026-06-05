@@ -18,11 +18,11 @@ import {
     decompressCanvasData,
     parseCanvasAssets,
     resolveListKind,
-} from './utils.js';
-import './me.js';
-import './projects.js';
-import './detail.js';
-import './version.js';
+} from '../lib/utils.js';
+import '../me.js';
+import '../projects.js';
+import '../detail.js';
+import '../version.js';
 
 // ---------------------------------------------------------------------------
 // 1. Pure helpers

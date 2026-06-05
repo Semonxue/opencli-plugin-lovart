@@ -18,7 +18,7 @@
  * header the Lovart studio frontend uses. No public API.
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { readLovartProjects } from './utils.js';
+import { readLovartProjects } from './lib/utils.js';
 
 cli({
     site: 'lovart',

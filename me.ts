@@ -7,7 +7,7 @@
  * without scraping arbitrary DOM.
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { readLovartMe } from './utils.js';
+import { readLovartMe } from './lib/utils.js';
 
 cli({
     site: 'lovart',

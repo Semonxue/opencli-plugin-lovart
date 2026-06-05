@@ -14,7 +14,7 @@
  * Auth: `usertoken` cookie forwarded as `token` header.
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { readLovartProject, dumpLovartProjectPage } from './utils.js';
+import { readLovartProject, dumpLovartProjectPage, resolveListKind } from './lib/utils.js';
 
 const KIND_EMOJI: Record<string, string> = {
     'gen-image':  '🖼️',
