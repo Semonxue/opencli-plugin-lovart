@@ -6,11 +6,11 @@
  *
  * Flags:
  *   <id>              → one-line summary (name + asset counts)
- *   --images true     → AI-generated images (gen-image shapes from /artifacts/generator/)
- *   --videos true     → AI-generated videos (gen-video shapes, MP4 URLs)
- *   --uploads true    → User uploads (user-image shapes from /artifacts/user/)
- *   --all true        → all of the above combined
- *   --canvas true     → raw canvas JSON
+ *   --images          → AI-generated images
+ *   --videos          → AI-generated videos
+ *   --uploads         → User uploads
+ *   --all             → all of the above combined
+ *   --canvas          → raw canvas JSON
  *   --export-canvas f → write full canvas JSON to file
  *   --dump-page f     → write full page state (debug)
  *
@@ -43,33 +43,33 @@ cli({
         },
         {
             name: 'images',
-            default: 'false',
-            type: 'string',
-            help: 'List AI-generated images. Usage: --images true',
+            default: false,
+            type: 'boolean',
+            help: 'List AI-generated images.',
         },
         {
             name: 'videos',
-            default: 'false',
-            type: 'string',
-            help: 'List AI-generated videos. Usage: --videos true',
+            default: false,
+            type: 'boolean',
+            help: 'List AI-generated videos.',
         },
         {
             name: 'uploads',
-            default: 'false',
-            type: 'string',
-            help: 'List user uploads. Usage: --uploads true',
+            default: false,
+            type: 'boolean',
+            help: 'List user uploads.',
         },
         {
             name: 'all',
-            default: 'false',
-            type: 'string',
-            help: 'List all assets. Usage: --all true',
+            default: false,
+            type: 'boolean',
+            help: 'List all assets (images + videos + uploads).',
         },
         {
             name: 'canvas',
-            default: 'false',
-            type: 'string',
-            help: 'Show raw canvas JSON. Usage: --canvas true',
+            default: false,
+            type: 'boolean',
+            help: 'Show raw canvas JSON.',
         },
         {
             name: 'export-canvas',
@@ -95,11 +95,11 @@ cli({
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const showImages = kwargs.images === 'true';
-        const showVideos = kwargs.videos === 'true';
-        const showUploads = kwargs.uploads === 'true';
-        const showAll = kwargs.all === 'true';
-        const showCanvas = kwargs.canvas === 'true';
+        const showImages = kwargs.images === true || kwargs.images === 'true';
+        const showVideos = kwargs.videos === true || kwargs.videos === 'true';
+        const showUploads = kwargs.uploads === true || kwargs.uploads === 'true';
+        const showAll = kwargs.all === true || kwargs.all === 'true';
+        const showCanvas = kwargs.canvas === true || kwargs.canvas === 'true';
         const exportPath = String(kwargs['export-canvas'] || '').trim();
         const dumpArg = kwargs['dump-page'];
         const dumpPath = (typeof dumpArg === 'string' && dumpArg.trim()) ? dumpArg.trim() : '';
