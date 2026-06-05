@@ -517,27 +517,6 @@ async function readImagesFromDOM(
 
     return images;
 }
-        },
-        projectId,
-    ));
-
-    if (!result) return null;
-
-    try {
-        const parsed = JSON.parse(result);
-        // The localStorage value might be the canvasDataV1 directly or wrapped
-        if (parsed && typeof parsed === 'object') {
-            if (parsed.tldrawSnapshot) return parsed as LovartCanvasDataV1;
-            if (parsed.store) {
-                // Wrapped in a store snapshot format
-                return parsed as LovartCanvasDataV1;
-            }
-        }
-        return null;
-    } catch {
-        return null;
-    }
-}
 
 /**
  * Extract image shapes from a canvasDataV1 tldrawSnapshot.
