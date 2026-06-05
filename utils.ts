@@ -16,6 +16,7 @@
  * commands once `canvas <id|search>` lands.
  */
 import { AuthRequiredError } from '@jackwener/opencli/errors';
+import zlib from 'zlib';
 
 export const LOVART_DOMAIN = 'www.lovart.ai';
 export const LOVART_HOMEPAGE = 'https://www.lovart.ai/zh/home';
@@ -262,32 +263,18 @@ export function decompressCanvasData(raw: string): LovartCanvasDataV1 | null {
     if (!raw || !raw.startsWith('SHAKKERDATA://')) return null;
     try {
         const b64 = raw.slice('SHAKKERDATA://'.length);
-        // eslint-disable-next-line no-console
-        console.error('[decompress] b64 len:', b64.length, 'first chars:', b64.slice(0, 20));
         const compressed = Buffer.from(b64, 'base64');
-        // eslint-disable-next-line no-console
-        console.error('[decompress] compressed len:', compressed.length, 'magic:', compressed.slice(0, 4).toString('hex'));
         const decompressed = zlibGunzip(compressed);
-        // eslint-disable-next-line no-console
-        console.error('[decompress] decompressed len:', decompressed.length);
         const text = new TextDecoder('utf-8', { fatal: false }).decode(decompressed);
         return JSON.parse(text) as LovartCanvasDataV1;
-    } catch (e: any) {
-        // eslint-disable-next-line no-console
-        console.error('[decompress] ERROR:', e?.message);
+    } catch {
         return null;
     }
 }
 
 function zlibGunzip(buf: Buffer): Buffer {
     // Detect if gzip-wrapped (magic bytes 1f 8b) or raw deflate
-    if (buf[0] === 0x1f && buf[1] === 0x8b) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const zlib = require('zlib') as typeof import('zlib');
-        return zlib.gunzipSync(buf);
-    }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const zlib = require('zlib') as typeof import('zlib');
+    if (buf[0] === 0x1f && buf[1] === 0x8b) return zlib.gunzipSync(buf);
     return zlib.inflateSync(buf);
 }
 
@@ -442,22 +429,13 @@ export async function readLovartProject(
     if (raw) {
         if (raw.startsWith('SHAKKERDATA://')) {
             canvasDataV1 = decompressCanvasData(raw);
-            // DEBUG
-            // eslint-disable-next-line no-console
-            console.error('[DEBUG] SHAKKERDATA decompress:', canvasDataV1 ? 'OK' : 'FAILED', 'raw len:', raw.length);
         } else {
             try {
                 canvasDataV1 = JSON.parse(raw) as LovartCanvasDataV1;
-                // eslint-disable-next-line no-console
-                console.error('[DEBUG] plain JSON parse OK');
-            } catch (e: any) {
-                // eslint-disable-next-line no-console
-                console.error('[DEBUG] plain JSON parse failed:', e?.message);
+            } catch {
+                // Non-fatal
             }
         }
-    } else {
-        // eslint-disable-next-line no-console
-        console.error('[DEBUG] canvas field is empty/null');
     }
 
     // If API didn't return canvas, try localStorage (tldraw persistence)
