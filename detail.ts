@@ -1,41 +1,45 @@
 /**
  * `opencli lovart project <id>` — fetch a single Lovart project's details.
  *
- * Hits `canva/project/queryProject` and extracts image/video/group counts from
- * the canvas. Three output modes:
+ * Hits `canva/project/queryProject` and decompresses the SHAKKERDATA canvas blob
+ * to extract image/video/group counts and URLs.
  *
- *   • Default (no flags)  → counts: images, generators, users, videos, groups
- *   --images            → list all artifact image URLs (generator/user/agent)
- *   --canvas            → raw canvasDataV1 object (JSON)
- *   --export-canvas <f> → write tldrawSnapshot to a local .json file
+ * Flags:
+ *   <id>              → one-line summary (name + asset counts)
+ *   --images          → AI生成的图 (gen-image shapes from /artifacts/generator/)
+ *   --videos          → AI生成的视频 (gen-video shapes, MP4 URLs)
+ *   --uploads         → 用户上传 (user-image shapes from /artifacts/user/)
+ *   --all             → all of the above combined
+ *   --canvas          → raw canvas JSON
+ *   --export-canvas f → write tldrawSnapshot to file.json
+ *   --dump-page f     → write full page state (debug)
  *
- * Auth: `usertoken` cookie forwarded as `token` header (same as `projects`).
- * videoCount / groupCount require canvasDataV1 (canvas API fallback in progress).
- *
- * Project URL pattern: `https://www.lovart.ai/canvas?projectId=<id>`
+ * Auth: `usertoken` cookie forwarded as `token` header.
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { readLovartProject, parseLovartProjectImages, dumpLovartProjectPage } from './utils.js';
+import { readLovartProject, dumpLovartProjectPage } from './utils.js';
+
+const KIND_EMOJI: Record<string, string> = {
+    'gen-image':  '🖼️',
+    'gen-video':  '🎬',
+    'user-image': '📷',
+};
 
 cli({
     site: 'lovart',
     name: 'project',
     access: 'read',
     description:
-        'Show a Lovart project: image/video/group counts and URLs.\n' +
+        'Show a Lovart project: asset counts and URLs.\n' +
         'Usage:\n' +
-        '  opencli lovart project <id>                  # summary\n' +
-        '  opencli lovart project <id> --images         # list all image URLs\n' +
-        '  opencli lovart project <id> --canvas         # raw canvasDataV1 JSON\n' +
-        '  opencli lovart project <id> --export-canvas f # write tldrawSnapshot\n' +
-        '  opencli lovart project <id> --dump-page f    # write full page state (debug)\n' +
-        'Columns:\n' +
-        '  imageCount   = c-image + c-video poster frames (generator/user/agent)\n' +
-        '  generatorCount = from /artifacts/generator/\n' +
-        '  userCount      = from /artifacts/user/\n' +
-        '  agentCount     = from /artifacts/agent/\n' +
-        '  videoCount     = c-video shapes (MP4 assets)\n' +
-        '  groupCount     = c-group shapes (Lovart grouping)',
+        '  opencli lovart project <id>              # summary\n' +
+        '  opencli lovart project <id> --images     # AI生成的图\n' +
+        '  opencli lovart project <id> --videos     # AI生成的视频\n' +
+        '  opencli lovart project <id> --uploads   # 用户上传的图\n' +
+        '  opencli lovart project <id> --all        # all three above\n' +
+        '  opencli lovart project <id> --canvas    # raw canvas JSON\n' +
+        '  opencli lovart project <id> --export-canvas f  # save tldrawSnapshot\n' +
+        '  opencli lovart project <id> --dump-page f      # full page debug dump',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -44,19 +48,37 @@ cli({
             name: 'projectId',
             type: 'string',
             positional: true,
-            help: 'The 32-char hex project ID (from opencli lovart projects or the canvas URL).',
+            help: '32-char hex project ID (from opencli lovart projects or canvas URL).',
         },
         {
             name: 'images',
             default: false,
             type: 'boolean',
-            help: 'Include a per-image URL table (shapeId, url, w, h, type).',
+            help: 'List AI生成的图 (c-image from /artifacts/generator/).',
+        },
+        {
+            name: 'videos',
+            default: false,
+            type: 'boolean',
+            help: 'List AI生成的视频 (c-video shapes, MP4 URLs).',
+        },
+        {
+            name: 'uploads',
+            default: false,
+            type: 'boolean',
+            help: 'List 用户上传的图 (c-image from /artifacts/user/).',
+        },
+        {
+            name: 'all',
+            default: false,
+            type: 'boolean',
+            help: 'List all assets: images + videos + uploads.',
         },
         {
             name: 'canvas',
             default: false,
             type: 'boolean',
-            help: 'Show the raw canvasDataV1 JSON object instead of image summaries.',
+            help: 'Show raw canvasDataV1 JSON.',
         },
         {
             name: 'exportCanvas',
@@ -68,90 +90,109 @@ cli({
             name: 'dumpPage',
             default: '',
             type: 'string',
-            help: 'Path to dump all raw page state (localStorage, sessionStorage, DOM, network) for debugging.',
+            help: 'Path to dump all raw page state for debugging.',
         },
     ],
-    columns: ['projectId', 'projectName', 'projectType', 'imageCount', 'generatorCount', 'userCount', 'agentCount', 'videoCount', 'groupCount', 'imageUrl'],
+    columns: ['type', 'size', 'url'],
     func: async (page: any, kwargs: any) => {
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const includeImages = Boolean(kwargs.images);
-        const rawCanvas = Boolean(kwargs.canvas);
+        const showImages = Boolean(kwargs.images);
+        const showVideos = Boolean(kwargs.videos);
+        const showUploads = Boolean(kwargs.uploads);
+        const showAll = Boolean(kwargs.all);
+        const showCanvas = Boolean(kwargs.canvas);
         const exportPath = String(kwargs.exportCanvas || '').trim();
         const dumpPath = String(kwargs.dumpPage || '').trim();
 
-        // --dump-page: capture everything and write to file, then return
+        // --dump-page: capture everything and exit
         if (dumpPath) {
             await dumpLovartProjectPage(page, projectId, dumpPath);
-            return [{
-                projectId,
-                projectName: '',
-                projectType: '',
-                imageCount: 0,
-                generatorCount: 0,
-                userCount: 0,
-                videoCount: 0,
-                imageUrl: `Dumped to ${dumpPath}`,
-            }];
+            return [{ type: 'debug', size: '', url: `Dumped → ${dumpPath}` }];
         }
 
         const result = await readLovartProject(page, projectId);
 
-        const generatorCount = result.images.filter((i) => i.type === 'generator').length;
-        const userCount = result.images.filter((i) => i.type === 'user').length;
-        const agentCount = result.images.filter((i) => i.type === 'agent').length;
-        const vCount = result.videoCount;
-        const gCount = result.groupCount;
+        // Build asset summary line
+        const gi = result.genImages.length;
+        const gv = result.genVideos.length;
+        const ui = result.userImages.length;
+        const gc = result.groupCount;
+        const parts: string[] = [];
+        if (gi > 0) parts.push(`${gi}张图`);
+        if (gv > 0) parts.push(`${gv}个视频`);
+        if (ui > 0) parts.push(`${ui}上传`);
+        if (gc > 0) parts.push(`${gc}分组`);
+        const assetSummary = parts.join(' · ') || '空项目';
 
-        if (rawCanvas) {
-            if (!result.canvasDataV1) throw new Error('No canvasDataV1 found — canvas may be empty.');
+        // --canvas: raw JSON output
+        if (showCanvas) {
+            if (!result.canvasDataV1) throw new Error('Canvas data is empty.');
             const snapshot = result.canvasDataV1.tldrawSnapshot;
             if (exportPath) {
                 const fs = await import('fs');
                 fs.writeFileSync(exportPath, JSON.stringify(snapshot, null, 2), 'utf-8');
             }
             return [{
-                projectId: result.projectId,
-                projectName: result.projectName,
-                projectType: result.projectType,
-                imageCount: result.images.length,
-                generatorCount,
-                userCount,
-                agentCount,
-                videoCount: vCount,
-                groupCount: gCount,
-                imageUrl: JSON.stringify(result.canvasDataV1, null, 2),
+                type: `📦 ${result.projectName} · ${assetSummary}`,
+                size: exportPath ? `已保存 → ${exportPath}` : '',
+                url: JSON.stringify(result.canvasDataV1, null, 2),
             }];
         }
 
-        if (includeImages) {
-            // Image rows: URL in imageUrl, counts in the first row, rest empty
-            return result.images.map((img, idx) => ({
-                projectId: idx === 0 ? result.projectId : '',
-                projectName: idx === 0 ? result.projectName : '',
-                projectType: idx === 0 ? result.projectType : '',
-                imageCount: idx === 0 ? result.images.length : '',
-                generatorCount: idx === 0 ? generatorCount : '',
-                userCount: idx === 0 ? userCount : '',
-                agentCount: idx === 0 ? agentCount : '',
-                videoCount: idx === 0 ? vCount : '',
-                groupCount: idx === 0 ? gCount : '',
-                imageUrl: img.url,
-            }));
+        // --export-canvas: save and return summary (no --canvas)
+        if (exportPath) {
+            if (!result.canvasDataV1) throw new Error('Canvas data is empty.');
+            const snapshot = result.canvasDataV1.tldrawSnapshot;
+            const fs = await import('fs');
+            fs.writeFileSync(exportPath, JSON.stringify(snapshot, null, 2), 'utf-8');
+            return [{
+                type: `📦 ${result.projectName} · ${assetSummary}`,
+                size: 'canvas已保存',
+                url: exportPath,
+            }];
         }
 
-        return [{
-            projectId: result.projectId,
-            projectName: result.projectName,
-            projectType: result.projectType,
-            imageCount: result.images.length,
-            generatorCount,
-            userCount,
-            agentCount,
-            videoCount: vCount,
-            groupCount: gCount,
-            imageUrl: '',
-        }];
+        const showAny = showImages || showVideos || showUploads || showAll;
+
+        // Build asset rows
+        const rows: Array<{ type: string; size: string; url: string }> = [];
+
+        // Summary row first (always shown)
+        rows.push({
+            type: `📦 ${result.projectName}`,
+            size: assetSummary,
+            url: '',
+        });
+
+        if (showAll || showImages) {
+            for (const a of result.genImages) {
+                const emoji = KIND_EMOJI[a.kind] ?? '🖼️';
+                rows.push({ type: emoji, size: fmtSize(a.w, a.h), url: a.url });
+            }
+        }
+
+        if (showAll || showVideos) {
+            for (const a of result.genVideos) {
+                const emoji = KIND_EMOJI[a.kind] ?? '🎬';
+                rows.push({ type: emoji, size: fmtSize(a.w, a.h), url: a.url });
+            }
+        }
+
+        if (showAll || showUploads) {
+            for (const a of result.userImages) {
+                const emoji = KIND_EMOJI[a.kind] ?? '📷';
+                rows.push({ type: emoji, size: fmtSize(a.w, a.h), url: a.url });
+            }
+        }
+
+        // If no flags, just return the summary row
+        return showAny ? rows : rows.slice(0, 1);
     },
 });
+
+function fmtSize(w: number, h: number): string {
+    if (!w || !h) return '';
+    return `${w}×${h}`;
+}

@@ -282,13 +282,13 @@ function zlibGunzip(buf: Buffer): Buffer {
 // Project detail (queryProject)
 // ---------------------------------------------------------------------------
 
-export interface LovartProjectImage {
+export interface LovartAsset {
     shapeId: string;
     url: string;
     w: number;
     h: number;
-    /** 'generator' = AI-generated, 'user' = uploaded, 'agent' = avatar/UI */
-    type: 'generator' | 'user' | 'agent';
+    /** 'gen-image' | 'gen-video' | 'user-image' | 'user-video' */
+    kind: string;
 }
 
 export interface LovartProjectDetail {
@@ -299,10 +299,10 @@ export interface LovartProjectDetail {
     isValidProject: boolean;
     isTitleChanged: boolean;
     isNewProject: boolean;
-    /** canvasDataV1 if the canvas was non-empty, null otherwise */
     canvasDataV1: LovartCanvasDataV1 | null;
-    images: LovartProjectImage[];
-    videoCount: number;
+    genImages: LovartAsset[];
+    genVideos: LovartAsset[];
+    userImages: LovartAsset[];
     groupCount: number;
 }
 
@@ -443,31 +443,29 @@ export async function readLovartProject(
         canvasDataV1 = await readCanvasFromLocalStorage(page, projectId);
     }
 
-    // Extract images from canvas JSON; fall back to DOM scraping if needed
-    let images: LovartProjectImage[] = canvasDataV1
-        ? parseLovartProjectImages(canvasDataV1)
-        : [];
+    // Extract assets from canvas JSON; DOM fallback only if canvas is empty
+    const { genImages, genVideos, userImages, groupCount } = parseCanvasAssets(canvasDataV1);
 
-    if (images.length === 0) {
-        images = await readImagesFromDOM(page, projectId);
+    let allAssets = [...genImages, ...genVideos, ...userImages];
+    if (allAssets.length === 0) {
+        allAssets = await readImagesFromDOM(page, projectId).then(imgs =>
+            imgs.map(img => ({ shapeId: '', url: img.url, w: img.w, h: img.h,
+                kind: img.type === 'generator' ? 'gen-image' : img.type === 'user' ? 'user-image' : 'gen-image' })),
+        );
     }
-
-    // Get video and group counts from the snapshot
-    const { videoCount, groupCount } = countCanvasVideosAndGroups(canvasDataV1);
 
     return {
         projectId: d.projectId || projectId,
         projectName: d.projectName ?? '',
         projectType: d.projectType ?? 3,
         version: d.version ?? '',
-        // isValidProject / isTitleChanged are not in the queryProject data payload;
-        // the frontend derives them from session state not available here.
         isValidProject: false,
         isTitleChanged: false,
         isNewProject: false,
         canvasDataV1,
-        images,
-        videoCount,
+        genImages,
+        genVideos,
+        userImages,
         groupCount,
     };
 }
@@ -520,10 +518,9 @@ async function readCanvasFromLocalStorage(
 async function readImagesFromDOM(
     page: any,
     projectId: string,
-): Promise<LovartProjectImage[]> {
-    const images: LovartProjectImage[] = [];
+): Promise<LovartAsset[]> {
+    const images: LovartAsset[] = [];
 
-    // Collect all image URLs from <img> tags rendered by the tldraw canvas
     const imgResults = unwrapEvaluateResult<Array<{ src: string; width: number; height: number }>>(
         await page.evaluate(`
             () => {
@@ -540,20 +537,13 @@ async function readImagesFromDOM(
     if (Array.isArray(imgResults)) {
         for (const img of imgResults) {
             if (!img.src || !img.src.startsWith('http')) continue;
-            // Determine type from URL path
-            let type: LovartProjectImage['type'] = 'unknown';
-            if (img.src.includes('/artifacts/generator/')) type = 'generator';
-            else if (img.src.includes('/artifacts/user/')) type = 'user';
-            else if (img.src.includes('/artifacts/agent/')) type = 'agent';
-            else continue; // skip non-artifact images
+            let kind: LovartAsset['kind'] = 'gen-image';
+            if (img.src.includes('/artifacts/generator/')) kind = 'gen-image';
+            else if (img.src.includes('/artifacts/user/')) kind = 'user-image';
+            else if (img.src.includes('/artifacts/agent/')) kind = 'gen-image';
+            else continue;
 
-            images.push({
-                shapeId: '',
-                url: img.src,
-                w: img.width,
-                h: img.height,
-                type,
-            });
+            images.push({ shapeId: '', url: img.src, w: img.width, h: img.height, kind });
         }
     }
 
@@ -561,92 +551,58 @@ async function readImagesFromDOM(
 }
 
 /**
- * Extract image/video shapes from a canvasDataV1 tldrawSnapshot.
+ * Parse all canvas assets from a tldrawSnapshot into typed buckets.
  *
- * Confirmed canvas structure (verified 2026-06):
- *   document.store = { 'shape:<id>': { id, type, props, ... } }
- *   document.records = {}  ← NOT the shape storage (tldraw v2 changed this)
+ * Shape types in Lovart's canvas:
+ *   c-image  → image shape
+ *     - /artifacts/generator/ → genImages
+ *     - /artifacts/user/      → userImages
+ *     - /artifacts/agent/     → skipped (UI assets)
+ *   c-video  → video shape
+ *     - props.url (.mp4)      → genVideos
+ *     - props.coverUrl         → skipped (poster, not a separate asset)
+ *   c-group  → group container (counted, no URL)
  *
- * Shape types:
- *   "c-image"  → props.url           (AI-generated or user-uploaded image)
- *   "c-video"  → props.url + props.coverUrl  (video + poster frame)
- *   "c-group"  → group container shape (no URL)
- *
- * Artifacts URL paths:
- *   /artifacts/generator/  → type: 'generator'
- *   /artifacts/user/       → type: 'user'
- *   /artifacts/agent/      → type: 'agent'
+ * tldraw v2 shape store: document.store = { 'shape:<id>': { id, type, props, ... } }
  */
-export function parseLovartProjectImages(canvasDataV1: LovartCanvasDataV1): LovartProjectImage[] {
-    const snapshot = canvasDataV1?.tldrawSnapshot;
-    if (!snapshot) return [];
+function parseCanvasAssets(canvasDataV1: LovartCanvasDataV1 | null): {
+    genImages: LovartAsset[];
+    genVideos: LovartAsset[];
+    userImages: LovartAsset[];
+    groupCount: number;
+} {
+    const genImages: LovartAsset[] = [];
+    const genVideos: LovartAsset[] = [];
+    const userImages: LovartAsset[] = [];
+    let groupCount = 0;
 
-    // tldraw v2: shapes live in document.store, not document.records
-    const store = (snapshot as any).document?.store;
-    if (!store || typeof store !== 'object') return [];
+    if (!canvasDataV1) return { genImages, genVideos, userImages, groupCount };
 
-    const images: LovartProjectImage[] = [];
+    const store = (canvasDataV1 as any).tldrawSnapshot?.document?.store;
+    if (!store || typeof store !== 'object') return { genImages, genVideos, userImages, groupCount };
 
-    for (const [shapeId, raw] of Object.entries(store)) {
+    for (const [, raw] of Object.entries(store)) {
         if (!raw || typeof raw !== 'object') continue;
         const shape = raw as Record<string, unknown>;
         const stype = String(shape.type ?? '');
+        const props = shape.props as Record<string, unknown> | undefined;
 
         if (stype === 'c-image') {
-            const props = shape.props as Record<string, unknown> | undefined;
             const url = String(props?.url ?? '');
             if (!url) continue;
-            images.push({
-                shapeId: String(shape.id ?? shapeId),
-                url,
-                w: Number(props?.w ?? 0),
-                h: Number(props?.h ?? 0),
-                type: inferImageType(url),
-            });
+            const asset = { shapeId: String(shape.id), url, w: Number(props?.w ?? 0), h: Number(props?.h ?? 0), kind: 'gen-image' as const };
+            if (url.includes('/artifacts/generator/')) genImages.push(asset);
+            else if (url.includes('/artifacts/user/')) userImages.push({ ...asset, kind: 'user-image' as const });
+            // agent assets skipped
         } else if (stype === 'c-video') {
-            const props = shape.props as Record<string, unknown> | undefined;
-            const coverUrl = String(props?.coverUrl ?? '');
-            if (coverUrl) {
-                // Video poster frame — also count as an image
-                images.push({
-                    shapeId: String(shape.id ?? shapeId),
-                    url: coverUrl,
-                    w: Number(props?.w ?? 0),
-                    h: Number(props?.h ?? 0),
-                    type: inferImageType(coverUrl),
-                });
-            }
+            const mp4Url = String(props?.url ?? '');
+            if (mp4Url) genVideos.push({ shapeId: String(shape.id), url: mp4Url, w: Number(props?.w ?? 0), h: Number(props?.h ?? 0), kind: 'gen-video' as const });
+        } else if (stype === 'c-group') {
+            groupCount++;
         }
     }
 
-    return images;
-}
-
-function inferImageType(url: string): LovartProjectImage['type'] {
-    if (url.includes('/artifacts/generator/')) return 'generator';
-    if (url.includes('/artifacts/user/')) return 'user';
-    if (url.includes('/artifacts/agent/')) return 'agent';
-    return 'unknown';
-}
-
-/**
- * Count c-video and c-group shapes from the canvas snapshot.
- * Returns { videoCount, groupCount }.
- */
-export function countCanvasVideosAndGroups(canvasDataV1: LovartCanvasDataV1 | null): { videoCount: number; groupCount: number } {
-    if (!canvasDataV1) return { videoCount: 0, groupCount: 0 };
-    const store = (canvasDataV1 as any).tldrawSnapshot?.document?.store;
-    if (!store || typeof store !== 'object') return { videoCount: 0, groupCount: 0 };
-
-    let videoCount = 0;
-    let groupCount = 0;
-    for (const raw of Object.values(store)) {
-        if (!raw || typeof raw !== 'object') continue;
-        const stype = String((raw as Record<string, unknown>).type ?? '');
-        if (stype === 'c-video') videoCount++;
-        else if (stype === 'c-group') groupCount++;
-    }
-    return { videoCount, groupCount };
+    return { genImages, genVideos, userImages, groupCount };
 }
 
 
