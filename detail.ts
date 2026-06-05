@@ -24,15 +24,18 @@ cli({
     description:
         'Show a Lovart project: image/video/group counts and URLs.\n' +
         'Usage:\n' +
-        '  opencli lovart project <id>                  # summary (images, generators, users, videos)\n' +
+        '  opencli lovart project <id>                  # summary\n' +
         '  opencli lovart project <id> --images         # list all image URLs\n' +
         '  opencli lovart project <id> --canvas         # raw canvasDataV1 JSON\n' +
-        '  opencli lovart project <id> --export-canvas f # write tldrawSnapshot to file.json\n' +
-        '  opencli lovart project <id> -f json          # output as JSON\n' +
-        'Notes:\n' +
-        '  - imageCount = all artifact images (generator + user + agent)\n' +
-        '  - videoCount = video poster frames (requires canvasDataV1, currently 0)\n' +
-        '  - groupCount = tldraw group shapes (requires canvasDataV1, currently 0)',
+        '  opencli lovart project <id> --export-canvas f # write tldrawSnapshot\n' +
+        '  opencli lovart project <id> --dump-page f    # write full page state (debug)\n' +
+        'Columns:\n' +
+        '  imageCount   = c-image + c-video poster frames (generator/user/agent)\n' +
+        '  generatorCount = from /artifacts/generator/\n' +
+        '  userCount      = from /artifacts/user/\n' +
+        '  agentCount     = from /artifacts/agent/\n' +
+        '  videoCount     = c-video shapes (MP4 assets)\n' +
+        '  groupCount     = c-group shapes (Lovart grouping)',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -68,7 +71,7 @@ cli({
             help: 'Path to dump all raw page state (localStorage, sessionStorage, DOM, network) for debugging.',
         },
     ],
-    columns: ['projectId', 'projectName', 'projectType', 'imageCount', 'generatorCount', 'userCount', 'videoCount', 'imageUrl'],
+    columns: ['projectId', 'projectName', 'projectType', 'imageCount', 'generatorCount', 'userCount', 'agentCount', 'videoCount', 'groupCount', 'imageUrl'],
     func: async (page: any, kwargs: any) => {
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
@@ -95,13 +98,11 @@ cli({
 
         const result = await readLovartProject(page, projectId);
 
-        // Count images by type
         const generatorCount = result.images.filter((i) => i.type === 'generator').length;
         const userCount = result.images.filter((i) => i.type === 'user').length;
         const agentCount = result.images.filter((i) => i.type === 'agent').length;
-        const videoCount = result.images.filter((i) => i.type === 'video').length;
-        // Video and group counts require canvasDataV1 (not yet available via API/localStorage)
-        const vCount = videoCount || 0;
+        const vCount = result.videoCount;
+        const gCount = result.groupCount;
 
         if (rawCanvas) {
             if (!result.canvasDataV1) throw new Error('No canvasDataV1 found — canvas may be empty.');
@@ -117,7 +118,9 @@ cli({
                 imageCount: result.images.length,
                 generatorCount,
                 userCount,
+                agentCount,
                 videoCount: vCount,
+                groupCount: gCount,
                 imageUrl: JSON.stringify(result.canvasDataV1, null, 2),
             }];
         }
@@ -131,7 +134,9 @@ cli({
                 imageCount: idx === 0 ? result.images.length : '',
                 generatorCount: idx === 0 ? generatorCount : '',
                 userCount: idx === 0 ? userCount : '',
+                agentCount: idx === 0 ? agentCount : '',
                 videoCount: idx === 0 ? vCount : '',
+                groupCount: idx === 0 ? gCount : '',
                 imageUrl: img.url,
             }));
         }
@@ -143,7 +148,9 @@ cli({
             imageCount: result.images.length,
             generatorCount,
             userCount,
+            agentCount,
             videoCount: vCount,
+            groupCount: gCount,
             imageUrl: '',
         }];
     },

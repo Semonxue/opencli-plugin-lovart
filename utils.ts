@@ -251,6 +251,41 @@ function formatDate(ms: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// SHAKKERDATA decompression (gzip + base64)
+// ---------------------------------------------------------------------------
+
+/**
+ * Decompress Lovart's canvas blob (SHAKKERDATA://<base64-gzip>).
+ * Returns the parsed JSON object, or null on failure.
+ */
+export function decompressCanvasData(raw: string): LovartCanvasDataV1 | null {
+    if (!raw || !raw.startsWith('SHAKKERDATA://')) return null;
+    try {
+        // The format is: SHAKKERDATA:// + base64(gzip(json))
+        const b64 = raw.slice('SHAKKERDATA://'.length);
+        // Node.js built-in: Buffer handles both base64 and base64url
+        const compressed = Buffer.from(b64, 'base64');
+        const decompressed = zlibGunzip(compressed);
+        const text = new TextDecoder('utf-8', { fatal: false }).decode(decompressed);
+        return JSON.parse(text) as LovartCanvasDataV1;
+    } catch {
+        return null;
+    }
+}
+
+function zlibGunzip(buf: Buffer): Buffer {
+    // Detect if gzip-wrapped (magic bytes 1f 8b) or raw deflate
+    if (buf[0] === 0x1f && buf[1] === 0x8b) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const zlib = require('zlib') as typeof import('zlib');
+        return zlib.gunzipSync(buf);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const zlib = require('zlib') as typeof import('zlib');
+    return zlib.inflateSync(buf);
+}
+
+// ---------------------------------------------------------------------------
 // Project detail (queryProject)
 // ---------------------------------------------------------------------------
 
@@ -391,24 +426,31 @@ export async function readLovartProject(
     }
 
     const d = result.data;
-    // canvas is the serialized canvasDataV1 string (confirmed from live API response)
+    // canvas field may be:
+    //   - null/empty  → new or empty project
+    //   - SHAKKERDATA://<base64-gzip> → compressed canvas JSON
+    //   - plain JSON  → already-parsed canvasDataV1 (fallback)
     const raw = d.canvas ?? '';
 
     let canvasDataV1: LovartCanvasDataV1 | null = null;
     if (raw) {
-        try {
-            canvasDataV1 = JSON.parse(raw) as LovartCanvasDataV1;
-        } catch {
-            // Non-fatal: return null canvas, empty images
+        if (raw.startsWith('SHAKKERDATA://')) {
+            canvasDataV1 = decompressCanvasData(raw);
+        } else {
+            try {
+                canvasDataV1 = JSON.parse(raw) as LovartCanvasDataV1;
+            } catch {
+                // Non-fatal
+            }
         }
     }
 
-    // If API returned null canvas, try reading from localStorage (tldraw persistence)
+    // If API didn't return canvas, try localStorage (tldraw persistence)
     if (!canvasDataV1) {
         canvasDataV1 = await readCanvasFromLocalStorage(page, projectId);
     }
 
-    // If still null, try extracting from DOM (tldraw canvas renders images in the page)
+    // Extract images from canvas JSON; fall back to DOM scraping if needed
     let images: LovartProjectImage[] = canvasDataV1
         ? parseLovartProjectImages(canvasDataV1)
         : [];
@@ -417,8 +459,8 @@ export async function readLovartProject(
         images = await readImagesFromDOM(page, projectId);
     }
 
-    // Also try to get video and group counts from DOM
-    const domStats = await readVideoAndGroupCountsFromDOM(page);
+    // Get video and group counts from the snapshot
+    const { videoCount, groupCount } = countCanvasVideosAndGroups(canvasDataV1);
 
     return {
         projectId: d.projectId || projectId,
@@ -432,8 +474,8 @@ export async function readLovartProject(
         isNewProject: false,
         canvasDataV1,
         images,
-        videoCount: domStats.videoCount,
-        groupCount: domStats.groupCount,
+        videoCount,
+        groupCount,
     };
 }
 
@@ -526,52 +568,92 @@ async function readImagesFromDOM(
 }
 
 /**
- * Extract image shapes from a canvasDataV1 tldrawSnapshot.
+ * Extract image/video shapes from a canvasDataV1 tldrawSnapshot.
  *
- * Shape types confirmed in the bundle (verified 2026-06):
- *   "c-image"  → props.url          (AI-generated or user-uploaded image)
- *   "c-video"  → props.coverUrl    (video poster frame)
+ * Confirmed canvas structure (verified 2026-06):
+ *   document.store = { 'shape:<id>': { id, type, props, ... } }
+ *   document.records = {}  ← NOT the shape storage (tldraw v2 changed this)
  *
- * Type is inferred by the URL path:
- *   /artifacts/generator/  → 'generator'
- *   /artifacts/user/       → 'user'
- *   /artifacts/agent/       → 'agent'
- *   otherwise             → 'unknown' (not emitted in this impl)
+ * Shape types:
+ *   "c-image"  → props.url           (AI-generated or user-uploaded image)
+ *   "c-video"  → props.url + props.coverUrl  (video + poster frame)
+ *   "c-group"  → group container shape (no URL)
+ *
+ * Artifacts URL paths:
+ *   /artifacts/generator/  → type: 'generator'
+ *   /artifacts/user/       → type: 'user'
+ *   /artifacts/agent/      → type: 'agent'
  */
 export function parseLovartProjectImages(canvasDataV1: LovartCanvasDataV1): LovartProjectImage[] {
     const snapshot = canvasDataV1?.tldrawSnapshot;
     if (!snapshot) return [];
 
-    const records = (snapshot as TldrawSnapshot).document?.records;
-    if (!records || typeof records !== 'object') return [];
+    // tldraw v2: shapes live in document.store, not document.records
+    const store = (snapshot as any).document?.store;
+    if (!store || typeof store !== 'object') return [];
 
     const images: LovartProjectImage[] = [];
 
-    for (const [shapeId, shape] of Object.entries(records)) {
-        if (!shape || typeof shape !== 'object') continue;
-        const s = shape as TldrawShape;
-        if (s.type === 'c-image' || s.type === 'c-video') {
-            const url = s.type === 'c-image'
-                ? (s.props?.url ?? '')
-                : (s.props?.coverUrl ?? '');
+    for (const [shapeId, raw] of Object.entries(store)) {
+        if (!raw || typeof raw !== 'object') continue;
+        const shape = raw as Record<string, unknown>;
+        const stype = String(shape.type ?? '');
+
+        if (stype === 'c-image') {
+            const props = shape.props as Record<string, unknown> | undefined;
+            const url = String(props?.url ?? '');
             if (!url) continue;
-
-            let type: LovartProjectImage['type'] = 'unknown';
-            if (url.includes('/artifacts/generator/')) type = 'generator';
-            else if (url.includes('/artifacts/user/')) type = 'user';
-            else if (url.includes('/artifacts/agent/')) type = 'agent';
-
             images.push({
-                shapeId: s.id || shapeId,
+                shapeId: String(shape.id ?? shapeId),
                 url,
-                w: s.props?.w ?? 0,
-                h: s.props?.h ?? 0,
-                type,
+                w: Number(props?.w ?? 0),
+                h: Number(props?.h ?? 0),
+                type: inferImageType(url),
             });
+        } else if (stype === 'c-video') {
+            const props = shape.props as Record<string, unknown> | undefined;
+            const coverUrl = String(props?.coverUrl ?? '');
+            if (coverUrl) {
+                // Video poster frame — also count as an image
+                images.push({
+                    shapeId: String(shape.id ?? shapeId),
+                    url: coverUrl,
+                    w: Number(props?.w ?? 0),
+                    h: Number(props?.h ?? 0),
+                    type: inferImageType(coverUrl),
+                });
+            }
         }
     }
 
     return images;
+}
+
+function inferImageType(url: string): LovartProjectImage['type'] {
+    if (url.includes('/artifacts/generator/')) return 'generator';
+    if (url.includes('/artifacts/user/')) return 'user';
+    if (url.includes('/artifacts/agent/')) return 'agent';
+    return 'unknown';
+}
+
+/**
+ * Count c-video and c-group shapes from the canvas snapshot.
+ * Returns { videoCount, groupCount }.
+ */
+export function countCanvasVideosAndGroups(canvasDataV1: LovartCanvasDataV1 | null): { videoCount: number; groupCount: number } {
+    if (!canvasDataV1) return { videoCount: 0, groupCount: 0 };
+    const store = (canvasDataV1 as any).tldrawSnapshot?.document?.store;
+    if (!store || typeof store !== 'object') return { videoCount: 0, groupCount: 0 };
+
+    let videoCount = 0;
+    let groupCount = 0;
+    for (const raw of Object.values(store)) {
+        if (!raw || typeof raw !== 'object') continue;
+        const stype = String((raw as Record<string, unknown>).type ?? '');
+        if (stype === 'c-video') videoCount++;
+        else if (stype === 'c-group') groupCount++;
+    }
+    return { videoCount, groupCount };
 }
 
 
