@@ -3,8 +3,12 @@
  *
  * Reads the version from `opencli-plugin.json` so the number is always
  * in sync with what `opencli plugin list` reports.
+ *
+ * Strategy is `PUBLIC` (no auth, no browser) — the version is local to the
+ * plugin install directory, so there's no need to open a tab or fetch
+ * cookies from lovart.ai.
  */
-import { cli } from '@jackwener/opencli/registry';
+import { cli, Strategy } from '@jackwener/opencli/registry';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -18,7 +22,7 @@ cli({
     name: 'version',
     access: 'read',
     description: 'Show the plugin version.',
-    domain: 'www.lovart.ai',
+    strategy: Strategy.PUBLIC,
     columns: ['name', 'version'],
     func: async () => {
         return [{
