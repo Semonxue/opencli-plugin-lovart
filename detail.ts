@@ -62,24 +62,6 @@ cli({
 
         const result = await readLovartProject(page, projectId);
 
-        // DEBUG: dump raw fields
-        // eslint-disable-next-line no-console
-        console.error('[DEBUG] raw data keys from API:', result._debugDataKeys);
-        // eslint-disable-next-line no-console
-        console.error('[DEBUG] raw canvasDataV1:', JSON.stringify(result.canvasDataV1)?.slice(0, 300));
-        // eslint-disable-next-line no-console
-        console.error('[DEBUG] images count:', result.images.length);
-        if (result.canvasDataV1) {
-            const snap = result.canvasDataV1.tldrawSnapshot;
-            console.error('[DEBUG] snapshot keys:', snap ? Object.keys(snap) : null);
-            if (snap?.document?.records) {
-                console.error('[DEBUG] record count:', Object.keys(snap.document.records).length);
-                for (const [k, v] of Object.entries(snap.document.records).slice(0, 3)) {
-                    console.error('[DEBUG] record', k, 'type:', (v as any).type);
-                }
-            }
-        }
-
         // Always return the metadata row
         const meta = {
             projectId: result.projectId,

@@ -274,8 +274,6 @@ export interface LovartProjectDetail {
     /** canvasDataV1 if the canvas was non-empty, null otherwise */
     canvasDataV1: LovartCanvasDataV1 | null;
     images: LovartProjectImage[];
-    /** @internal debug: raw keys from API response */
-    _debugDataKeys?: string[];
 }
 
 export interface LovartCanvasDataV1 {
@@ -337,16 +335,13 @@ export async function readLovartProject(
     const result = unwrapEvaluateResult<{
         ok: boolean;
         data: {
+            canvas: string | null;
             projectId: string;
             projectName: string;
             projectType: number;
             version: string;
-            isValidProject: boolean;
-            isTitleChanged: boolean;
-            isNewProject: boolean;
-            canvasRaw: string | null; // canvasDataV1 serialized, empty string when new
-            error?: string;
-            status?: number;
+            userId: string;
+            validProjectId: string;
         };
         error?: string;
     }>(await page.evaluate(
@@ -369,9 +364,8 @@ export async function readLovartProject(
                         credentials: 'include',
                     });
                     const body = await resp.json();
-                    // DEBUG: return full data keys so we can see the field names
                     if (body?.code === 0 || body?.code === '0') {
-                        return { ok: true, data: body.data, _debugDataKeys: Object.keys(body.data || {}) };
+                        return { ok: true, data: body.data };
                     }
                     if (body?.code === 401 && attempt === 0) continue; // retry once
                     return { ok: false, error: 'API code ' + body?.code + ' ' + (body?.msg || ''), data: body?.data };
@@ -391,14 +385,8 @@ export async function readLovartProject(
     }
 
     const d = result.data;
-    // DEBUG: capture raw keys before we assume field names
-    const rawKeys = Object.keys(d || {});
-
-    const raw = (d as any).canvasRaw ?? '';
-    // DEBUG: log if canvasRaw is missing or null
-    if (rawKeys.length > 0 && !(d as any).canvasRaw) {
-        (d as any)._debugRawKeys = rawKeys;
-    }
+    // canvas is the serialized canvasDataV1 string (confirmed from live API response)
+    const raw = d.canvas ?? '';
 
     let canvasDataV1: LovartCanvasDataV1 | null = null;
     if (raw) {
@@ -416,12 +404,13 @@ export async function readLovartProject(
         projectName: d.projectName ?? '',
         projectType: d.projectType ?? 3,
         version: d.version ?? '',
-        isValidProject: d.isValidProject ?? false,
-        isTitleChanged: d.isTitleChanged ?? false,
-        isNewProject: d.isNewProject ?? false,
+        // isValidProject / isTitleChanged are not in the queryProject data payload;
+        // the frontend derives them from session state not available here.
+        isValidProject: false,
+        isTitleChanged: false,
+        isNewProject: false,
         canvasDataV1,
         images,
-        _debugDataKeys: rawKeys,
     };
 }
 
