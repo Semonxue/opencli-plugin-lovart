@@ -63,8 +63,11 @@ cli({
         const result = await readLovartProject(page, projectId);
 
         // DEBUG: dump raw fields
-        console.error('[DEBUG] result keys:', Object.keys(result));
-        console.error('[DEBUG] canvasDataV1 keys:', result.canvasDataV1 ? Object.keys(result.canvasDataV1) : null);
+        // eslint-disable-next-line no-console
+        console.error('[DEBUG] raw data keys from API:', result._debugDataKeys);
+        // eslint-disable-next-line no-console
+        console.error('[DEBUG] raw canvasDataV1:', JSON.stringify(result.canvasDataV1)?.slice(0, 300));
+        // eslint-disable-next-line no-console
         console.error('[DEBUG] images count:', result.images.length);
         if (result.canvasDataV1) {
             const snap = result.canvasDataV1.tldrawSnapshot;

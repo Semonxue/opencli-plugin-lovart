@@ -274,6 +274,8 @@ export interface LovartProjectDetail {
     /** canvasDataV1 if the canvas was non-empty, null otherwise */
     canvasDataV1: LovartCanvasDataV1 | null;
     images: LovartProjectImage[];
+    /** @internal debug: raw keys from API response */
+    _debugDataKeys?: string[];
 }
 
 export interface LovartCanvasDataV1 {
@@ -367,8 +369,9 @@ export async function readLovartProject(
                         credentials: 'include',
                     });
                     const body = await resp.json();
+                    // DEBUG: return full data keys so we can see the field names
                     if (body?.code === 0 || body?.code === '0') {
-                        return { ok: true, data: body.data };
+                        return { ok: true, data: body.data, _debugDataKeys: Object.keys(body.data || {}) };
                     }
                     if (body?.code === 401 && attempt === 0) continue; // retry once
                     return { ok: false, error: 'API code ' + body?.code + ' ' + (body?.msg || ''), data: body?.data };
@@ -388,7 +391,14 @@ export async function readLovartProject(
     }
 
     const d = result.data;
-    const raw = d.canvasRaw ?? '';
+    // DEBUG: capture raw keys before we assume field names
+    const rawKeys = Object.keys(d || {});
+
+    const raw = (d as any).canvasRaw ?? '';
+    // DEBUG: log if canvasRaw is missing or null
+    if (rawKeys.length > 0 && !(d as any).canvasRaw) {
+        (d as any)._debugRawKeys = rawKeys;
+    }
 
     let canvasDataV1: LovartCanvasDataV1 | null = null;
     if (raw) {
@@ -411,6 +421,7 @@ export async function readLovartProject(
         isNewProject: d.isNewProject ?? false,
         canvasDataV1,
         images,
+        _debugDataKeys: rawKeys,
     };
 }
 
