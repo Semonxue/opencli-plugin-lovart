@@ -1,15 +1,16 @@
 /**
  * `opencli lovart project <id>` — fetch a single Lovart project's details.
  *
- * Hits `canva/project/queryProject` and parses the canvasDataV1 JSON blob
- * inside `data.canvas`. Supports three output modes:
+ * Hits `canva/project/queryProject` and extracts image/video/group counts from
+ * the canvas. Three output modes:
  *
- *   • Default (no flags)  → basic metadata + image counts
- *   --images            → per-image URL table
- *   --canvas            → raw canvasDataV1 object
+ *   • Default (no flags)  → counts: images, generators, users, videos, groups
+ *   --images            → list all artifact image URLs (generator/user/agent)
+ *   --canvas            → raw canvasDataV1 object (JSON)
  *   --export-canvas <f> → write tldrawSnapshot to a local .json file
  *
  * Auth: `usertoken` cookie forwarded as `token` header (same as `projects`).
+ * videoCount / groupCount require canvasDataV1 (canvas API fallback in progress).
  *
  * Project URL pattern: `https://www.lovart.ai/canvas?projectId=<id>`
  */
@@ -21,12 +22,17 @@ cli({
     name: 'project',
     access: 'read',
     description:
-        'Show a Lovart project: metadata, image counts, and image URL table.\n' +
+        'Show a Lovart project: image/video/group counts and URLs.\n' +
         'Usage:\n' +
-        '  opencli lovart project <id>                  # basic metadata + counts\n' +
-        '  opencli lovart project <id> --images          # per-image URL table\n' +
-        '  opencli lovart project <id> --canvas          # raw canvasDataV1 JSON\n' +
-        '  opencli lovart project <id> --export-canvas f  # write tldrawSnapshot to file.json',
+        '  opencli lovart project <id>                  # summary (images, generators, users, videos)\n' +
+        '  opencli lovart project <id> --images         # list all image URLs\n' +
+        '  opencli lovart project <id> --canvas         # raw canvasDataV1 JSON\n' +
+        '  opencli lovart project <id> --export-canvas f # write tldrawSnapshot to file.json\n' +
+        '  opencli lovart project <id> -f json          # output as JSON\n' +
+        'Notes:\n' +
+        '  - imageCount = all artifact images (generator + user + agent)\n' +
+        '  - videoCount = video poster frames (requires canvasDataV1, currently 0)\n' +
+        '  - groupCount = tldraw group shapes (requires canvasDataV1, currently 0)',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -56,7 +62,7 @@ cli({
             help: 'Path to write the tldrawSnapshot as a local .json file.',
         },
     ],
-    columns: ['projectId', 'projectName', 'projectType', 'version', 'isValidProject', 'isTitleChanged', 'imageCount', 'generatorCount', 'userCount'],
+    columns: ['projectId', 'projectName', 'projectType', 'imageCount', 'generatorCount', 'userCount', 'videoCount', 'imageUrl'],
     func: async (page: any, kwargs: any) => {
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
@@ -67,54 +73,56 @@ cli({
 
         const result = await readLovartProject(page, projectId);
 
-        // Always return the metadata row
-        const meta = {
-            projectId: result.projectId,
-            projectName: result.projectName,
-            projectType: result.projectType,
-            version: result.version,
-            isValidProject: result.isValidProject,
-            isTitleChanged: result.isTitleChanged,
-            imageCount: result.images.length,
-            generatorCount: result.images.filter((i) => i.type === 'generator').length,
-            userCount: result.images.filter((i) => i.type === 'user').length,
-        };
-
-        if (exportPath) {
-            const snapshot = result.canvasDataV1?.tldrawSnapshot;
-            if (!snapshot) throw new Error('No tldrawSnapshot found — canvas may be empty.');
-            const fs = await import('fs');
-            fs.writeFileSync(exportPath, JSON.stringify(snapshot, null, 2), 'utf-8');
-            meta['exportFile'] = exportPath;
-        }
+        // Count images by type
+        const generatorCount = result.images.filter((i) => i.type === 'generator').length;
+        const userCount = result.images.filter((i) => i.type === 'user').length;
+        const agentCount = result.images.filter((i) => i.type === 'agent').length;
+        const videoCount = result.images.filter((i) => i.type === 'video').length;
+        // Video and group counts require canvasDataV1 (not yet available via API/localStorage)
+        const vCount = videoCount || 0;
 
         if (rawCanvas) {
             if (!result.canvasDataV1) throw new Error('No canvasDataV1 found — canvas may be empty.');
+            const snapshot = result.canvasDataV1.tldrawSnapshot;
+            if (exportPath) {
+                const fs = await import('fs');
+                fs.writeFileSync(exportPath, JSON.stringify(snapshot, null, 2), 'utf-8');
+            }
             return [{
-                ...meta,
-                canvasDataV1: JSON.stringify(result.canvasDataV1, null, 2),
+                projectId: result.projectId,
+                projectName: result.projectName,
+                projectType: result.projectType,
+                imageCount: result.images.length,
+                generatorCount,
+                userCount,
+                videoCount: vCount,
+                imageUrl: JSON.stringify(result.canvasDataV1, null, 2),
             }];
         }
 
         if (includeImages) {
-            return result.images.map((img) => ({
-                shapeId: img.shapeId,
+            // Image rows: URL in imageUrl, counts in the first row, rest empty
+            return result.images.map((img, idx) => ({
+                projectId: idx === 0 ? result.projectId : '',
+                projectName: idx === 0 ? result.projectName : '',
+                projectType: idx === 0 ? result.projectType : '',
+                imageCount: idx === 0 ? result.images.length : '',
+                generatorCount: idx === 0 ? generatorCount : '',
+                userCount: idx === 0 ? userCount : '',
+                videoCount: idx === 0 ? vCount : '',
                 imageUrl: img.url,
-                width: img.w,
-                height: img.h,
-                imageType: img.type,
-                projectName: '',
-                projectType: '',
-                projectId: '',
-                version: '',
-                isValidProject: '',
-                isTitleChanged: '',
-                imageCount: '',
-                generatorCount: '',
-                userCount: '',
             }));
         }
 
-        return [meta];
+        return [{
+            projectId: result.projectId,
+            projectName: result.projectName,
+            projectType: result.projectType,
+            imageCount: result.images.length,
+            generatorCount,
+            userCount,
+            videoCount: vCount,
+            imageUrl: '',
+        }];
     },
 });
