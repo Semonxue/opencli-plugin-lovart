@@ -1,10 +1,11 @@
 # opencli-plugin-lovart
 
-Lovart (lovart.ai) adapter for [OpenCLI](https://github.com/jackwener/OpenCLI). Currently ships three read-only commands:
+Lovart (lovart.ai) adapter for [OpenCLI](https://github.com/jackwener/OpenCLI). Currently ships four read-only commands:
 
 - `opencli lovart me` — read the logged-in user identity (name, email, plan, credits) from the avatar popover.
 - `opencli lovart projects` — list projects on the `/zh/projects` grid (name + last-updated).
 - `opencli lovart project <id>` — fetch a single project: asset counts and URLs (images, videos, uploads).
+- `opencli lovart version` — print the plugin version (read from `opencli-plugin.json`).
 
 Strategy: `UI` for `me`, `COOKIE` for `projects` and `project` — Lovart is a React SPA with no public API; the avatar / grid selectors are read directly, while project / canvas data is fetched through internal endpoints using the `usertoken` cookie (forwarded as a `token` header).
 
