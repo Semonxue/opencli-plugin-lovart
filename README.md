@@ -1,11 +1,12 @@
 # opencli-plugin-lovart
 
-Lovart (lovart.ai) adapter for [OpenCLI](https://github.com/jackwener/OpenCLI). Currently ships two read-only commands:
+Lovart (lovart.ai) adapter for [OpenCLI](https://github.com/jackwener/OpenCLI). Currently ships three read-only commands:
 
 - `opencli lovart me` — read the logged-in user identity (name, email, plan, credits) from the avatar popover.
 - `opencli lovart projects` — list projects on the `/zh/projects` grid (name + last-updated).
+- `opencli lovart project <id>` — fetch a single project: asset counts and URLs (images, videos, uploads).
 
-Strategy: `UI` — Lovart is a React SPA with no public API; the adapter reads `[data-testid="avatar-popover-content"]` and `[role="grid"] [role="gridcell"]` directly.
+Strategy: `UI` for `me`, `COOKIE` for `projects` and `project` — Lovart is a React SPA with no public API; the avatar / grid selectors are read directly, while project / canvas data is fetched through internal endpoints using the `usertoken` cookie (forwarded as a `token` header).
 
 ## Install
 
@@ -44,6 +45,58 @@ opencli lovart projects -f json
 The `projectCoverList[]` from the API is intentionally dropped — projects carry several previews and exposing only the first one would be misleading; agents that need the full cover set can fetch the project page through `url`.
 
 Pass `--order asc` to flip the sort; pass `--limit N` to change the slice count (default 5). The endpoint is paginated internally so the adapter can reach every project, not just the ones currently painted in the grid.
+
+## `opencli lovart project <id>`
+
+Fetch a single project and return its assets. The first row is a one-line summary (`name · counts`); subsequent rows are the assets themselves.
+
+```sh
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a          # default: list all assets (max 10 rows)
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type image
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type video
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type upload
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type all --limit 50
+```
+
+**Arguments**
+
+| Name | Description |
+| --- | --- |
+| `projectId` | 32-char hex project ID (from `opencli lovart projects` or the canvas URL). |
+
+**Command options**
+
+| Flag | Description | Default | Choices |
+| --- | --- | --- | --- |
+| `--type` | Asset type to list. | `all` | `all`, `image`, `video`, `upload` |
+| `--canvas` | Show raw canvas JSON. Pass `--canvas true` to enable. | `false` | — |
+| `--export-canvas` | Path to write the full canvas JSON (`canvasDataV1`) to a local `.json` file. | `""` | — |
+| `--limit` | Max asset rows to list. | `10` | — |
+| `--export-page` | Path to dump all raw page state for debugging. | `""` | — |
+
+**Examples**
+
+```sh
+# Default: list all assets (images + videos + uploads)
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a
+
+# Only user uploads
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --type upload
+
+# Show more rows
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --limit 50
+
+# Raw canvas JSON
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --canvas true
+
+# Save canvas JSON to file
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --export-canvas /tmp/canvas.json
+
+# Debug: dump full page state
+opencli lovart project 140b5026cfe04d9e9bf24b84ffbe138a --export-page /tmp/page-state.json
+```
+
+Under the hood the command calls `canva/project/queryProject`, decompresses the `SHAKKERDATA://` canvas blob, and walks the tldraw `document.store` to bucket every `c-image` / `c-video` / `c-group` shape into one of three categories: AI-generated (`/artifacts/generator/`), user uploads (`/artifacts/user/`), or groups. The `usertoken` cookie is the only auth — no page navigation is required.
 
 ## Update after edits
 
