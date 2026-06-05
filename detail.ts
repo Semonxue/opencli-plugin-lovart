@@ -6,12 +6,12 @@
  *
  * Flags:
  *   <id>              → one-line summary (name + asset counts)
- *   --images          → AI生成的图 (gen-image shapes from /artifacts/generator/)
- *   --videos          → AI生成的视频 (gen-video shapes, MP4 URLs)
- *   --uploads         → 用户上传 (user-image shapes from /artifacts/user/)
+ *   --images          → AI-generated images (gen-image shapes from /artifacts/generator/)
+ *   --videos          → AI-generated videos (gen-video shapes, MP4 URLs)
+ *   --uploads         → User uploads (user-image shapes from /artifacts/user/)
  *   --all             → all of the above combined
  *   --canvas          → raw canvas JSON
- *   --export-canvas f → write tldrawSnapshot to file.json
+ *   --export-canvas f → write full canvas JSON to file
  *   --dump-page f     → write full page state (debug)
  *
  * Auth: `usertoken` cookie forwarded as `token` header.
@@ -43,21 +43,45 @@ cli({
         },
         {
             name: 'images',
-            default: false,
-            type: 'boolean',
-            help: 'List AI生成的图 (c-image from /artifacts/generator/).',
+            default: 'false',
+            type: 'string',
+            help: 'List AI-generated images. Usage: --images true',
+        },
+        {
+            name: 'videos',
+            default: 'false',
+            type: 'string',
+            help: 'List AI-generated videos. Usage: --videos true',
+        },
+        {
+            name: 'uploads',
+            default: 'false',
+            type: 'string',
+            help: 'List user uploads. Usage: --uploads true',
+        },
+        {
+            name: 'all',
+            default: 'false',
+            type: 'string',
+            help: 'List all assets. Usage: --all true',
+        },
+        {
+            name: 'canvas',
+            default: 'false',
+            type: 'string',
+            help: 'Show raw canvas JSON. Usage: --canvas true',
         },
         {
             name: 'videos',
             default: false,
             type: 'boolean',
-            help: 'List AI生成的视频 (c-video shapes, MP4 URLs).',
+            help: 'List AI-generated videos (c-video shapes, MP4 URLs).',
         },
         {
             name: 'uploads',
             default: false,
             type: 'boolean',
-            help: 'List 用户上传的图 (c-image from /artifacts/user/).',
+            help: 'List user uploads (c-image from /artifacts/user/).',
         },
         {
             name: 'all',
@@ -95,11 +119,11 @@ cli({
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const showImages = Boolean(kwargs.images);
-        const showVideos = Boolean(kwargs.videos);
-        const showUploads = Boolean(kwargs.uploads);
-        const showAll = Boolean(kwargs.all);
-        const showCanvas = Boolean(kwargs.canvas);
+        const showImages = kwargs.images === 'true';
+        const showVideos = kwargs.videos === 'true';
+        const showUploads = kwargs.uploads === 'true';
+        const showAll = kwargs.all === 'true';
+        const showCanvas = kwargs.canvas === 'true';
         const exportPath = String(kwargs['export-canvas'] || '').trim();
         const dumpArg = kwargs['dump-page'];
         const dumpPath = (typeof dumpArg === 'string' && dumpArg.trim()) ? dumpArg.trim() : '';
@@ -119,11 +143,11 @@ cli({
         const ui = result.userImages.length;
         const gc = result.groupCount;
         const parts: string[] = [];
-        if (gi > 0) parts.push(`${gi}张图`);
-        if (gv > 0) parts.push(`${gv}个视频`);
-        if (ui > 0) parts.push(`${ui}上传`);
-        if (gc > 0) parts.push(`${gc}分组`);
-        const assetSummary = parts.join(' · ') || '空项目';
+        if (gi > 0) parts.push(`${gi} img`);
+        if (gv > 0) parts.push(`${gv} vid`);
+        if (ui > 0) parts.push(`${ui} upload`);
+        if (gc > 0) parts.push(`${gc} group`);
+        const assetSummary = parts.join(' · ') || 'empty';
 
         // --canvas: raw JSON output
         if (showCanvas) {
@@ -134,7 +158,7 @@ cli({
             }
             return [{
                 type: `📦 ${result.projectName} · ${assetSummary}`,
-                size: exportPath ? `已保存 → ${exportPath}` : '',
+                size: exportPath ? `saved → ${exportPath}` : '',
                 url: JSON.stringify(result.canvasDataV1, null, 2),
             }];
         }
@@ -146,7 +170,7 @@ cli({
             fs.writeFileSync(exportPath, JSON.stringify(result.canvasDataV1, null, 2), 'utf-8');
             return [{
                 type: `📦 ${result.projectName} · ${assetSummary}`,
-                size: 'canvas已保存',
+                size: 'canvas saved',
                 url: exportPath,
             }];
         }
