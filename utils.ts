@@ -326,7 +326,10 @@ export async function readLovartProject(
     page: any,
     projectId: string,
 ): Promise<LovartProjectDetail> {
-    await page.goto(LOVART_HOMEPAGE);
+    // Navigate to the canvas page — Lovart's queryProject API only returns
+    // canvas data when the session is on the canvas route (set-cookie + session state).
+    const canvasUrl = `https://www.lovart.ai/canvas?projectId=${projectId}`;
+    await page.goto(canvasUrl);
     await page.wait({ selector: 'body', timeoutMs: 8000 });
 
     const result = unwrapEvaluateResult<{
