@@ -261,14 +261,20 @@ function formatDate(ms: number): string {
 export function decompressCanvasData(raw: string): LovartCanvasDataV1 | null {
     if (!raw || !raw.startsWith('SHAKKERDATA://')) return null;
     try {
-        // The format is: SHAKKERDATA:// + base64(gzip(json))
         const b64 = raw.slice('SHAKKERDATA://'.length);
-        // Node.js built-in: Buffer handles both base64 and base64url
+        // eslint-disable-next-line no-console
+        console.error('[decompress] b64 len:', b64.length, 'first chars:', b64.slice(0, 20));
         const compressed = Buffer.from(b64, 'base64');
+        // eslint-disable-next-line no-console
+        console.error('[decompress] compressed len:', compressed.length, 'magic:', compressed.slice(0, 4).toString('hex'));
         const decompressed = zlibGunzip(compressed);
+        // eslint-disable-next-line no-console
+        console.error('[decompress] decompressed len:', decompressed.length);
         const text = new TextDecoder('utf-8', { fatal: false }).decode(decompressed);
         return JSON.parse(text) as LovartCanvasDataV1;
-    } catch {
+    } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.error('[decompress] ERROR:', e?.message);
         return null;
     }
 }
@@ -436,13 +442,22 @@ export async function readLovartProject(
     if (raw) {
         if (raw.startsWith('SHAKKERDATA://')) {
             canvasDataV1 = decompressCanvasData(raw);
+            // DEBUG
+            // eslint-disable-next-line no-console
+            console.error('[DEBUG] SHAKKERDATA decompress:', canvasDataV1 ? 'OK' : 'FAILED', 'raw len:', raw.length);
         } else {
             try {
                 canvasDataV1 = JSON.parse(raw) as LovartCanvasDataV1;
-            } catch {
-                // Non-fatal
+                // eslint-disable-next-line no-console
+                console.error('[DEBUG] plain JSON parse OK');
+            } catch (e: any) {
+                // eslint-disable-next-line no-console
+                console.error('[DEBUG] plain JSON parse failed:', e?.message);
             }
         }
+    } else {
+        // eslint-disable-next-line no-console
+        console.error('[DEBUG] canvas field is empty/null');
     }
 
     // If API didn't return canvas, try localStorage (tldraw persistence)
