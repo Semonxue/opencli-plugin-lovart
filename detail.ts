@@ -43,23 +43,23 @@ cli({
         },
         {
             name: 'images',
-            help: 'List AI-generated images.',
+            default: false,
+            help: 'List AI-generated images. Pass true to enable: --images true',
         },
         {
             name: 'videos',
-            help: 'List AI-generated videos.',
+            default: false,
+            help: 'List AI-generated videos. Pass true to enable: --videos true',
         },
         {
             name: 'uploads',
-            help: 'List user uploads.',
-        },
-        {
-            name: 'all',
-            help: 'List all assets.',
+            default: false,
+            help: 'List user uploads. Pass true to enable: --uploads true',
         },
         {
             name: 'canvas',
-            help: 'Show raw canvas JSON.',
+            default: false,
+            help: 'Show raw canvas JSON. Pass true to enable: --canvas true',
         },
         {
             name: 'export-canvas',
@@ -85,11 +85,11 @@ cli({
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const showImages = kwargs.images === true;
-        const showVideos = kwargs.videos === true;
-        const showUploads = kwargs.uploads === true;
-        const showAll = kwargs.all === true;
-        const showCanvas = kwargs.canvas === true;
+        const showImages = kwargs.images === true || kwargs.images === 'true';
+        const showVideos = kwargs.videos === true || kwargs.videos === 'true';
+        const showUploads = kwargs.uploads === true || kwargs.uploads === 'true';
+        const showAll = kwargs.all === true || kwargs.all === 'true';
+        const showCanvas = kwargs.canvas === true || kwargs.canvas === 'true';
         const exportPath = String(kwargs['export-canvas'] || '').trim();
         const dumpArg = kwargs['dump-page'];
         const dumpPath = (typeof dumpArg === 'string' && dumpArg.trim()) ? dumpArg.trim() : '';
