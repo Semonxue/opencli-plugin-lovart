@@ -204,5 +204,5 @@ cli({
 
 function fmtSize(w: number, h: number): string {
     if (!w || !h) return '';
-    return `${w}×${h}`;
+    return `${Math.round(w)}×${Math.round(h)}`;
 }
