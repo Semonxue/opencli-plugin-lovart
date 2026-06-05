@@ -39,11 +39,11 @@ cli({
             help: '32-char hex project ID (from opencli lovart projects or canvas URL).',
         },
         {
-            name: 'type',
-            default: 'all',
+            name: 'list',
+            default: '',
             type: 'string',
             choices: ['all', 'image', 'video', 'upload'],
-            help: 'Asset type to list. Default: all (lists everything).',
+            help: 'List assets. Options: all, image, video, upload. Omit for summary only.',
         },
         {
             name: 'canvas',
@@ -74,7 +74,7 @@ cli({
         const projectId = String(kwargs.projectId || '').trim();
         if (!projectId) throw new Error('projectId is required (e.g. 140b5026cfe04d9e9bf24b84ffbe138a)');
 
-        const assetType = String(kwargs.type || 'all').toLowerCase();
+        const listKind = String(kwargs.list || '').toLowerCase();
         const showCanvas = kwargs.canvas === true || kwargs.canvas === 'true';
         const exportPath = String(kwargs['export-canvas'] || '').trim();
         const dumpArg = kwargs['export-page'];
@@ -127,13 +127,12 @@ cli({
             }];
         }
 
-        const showAll = assetType === 'all';
-        const showImages = showAll || assetType === 'image';
-        const showVideos = showAll || assetType === 'video';
-        const showUploads = showAll || assetType === 'upload';
-
-        // Build asset rows
-        const rows: Array<{ type: string; size: string; url: string }> = [];
+        // --list <kind>: empty string means "summary only" (no asset rows)
+        const showList = listKind === 'all' || listKind === 'image' || listKind === 'video' || listKind === 'upload';
+        const showAll = listKind === 'all';
+        const showImages = showList && (showAll || listKind === 'image');
+        const showVideos = showList && (showAll || listKind === 'video');
+        const showUploads = showList && (showAll || listKind === 'upload');
 
         // Summary row first (always shown)
         const summary: Array<{ type: string; size: string; url: string }> = [{
@@ -141,6 +140,8 @@ cli({
             size: assetSummary,
             url: '',
         }];
+
+        if (!showList) return summary;
 
         const assetRows: Array<{ type: string; size: string; url: string }> = [];
 
@@ -163,10 +164,7 @@ cli({
         }
 
         // Apply limit if specified
-        const finalRows = limit > 0 ? [...summary, ...assetRows.slice(0, limit)] : [...summary, ...assetRows];
-
-        // When --type filters, drop the summary row so the output is just the filtered assets.
-        return showAll ? finalRows : assetRows.slice(0, limit > 0 ? limit : assetRows.length);
+        return limit > 0 ? [...summary, ...assetRows.slice(0, limit)] : [...summary, ...assetRows];
     },
 });
 
