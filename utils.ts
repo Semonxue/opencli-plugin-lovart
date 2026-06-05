@@ -249,3 +249,213 @@ function formatDate(ms: number): string {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
+
+// ---------------------------------------------------------------------------
+// Project detail (queryProject)
+// ---------------------------------------------------------------------------
+
+export interface LovartProjectImage {
+    shapeId: string;
+    url: string;
+    w: number;
+    h: number;
+    /** 'generator' = AI-generated, 'user' = uploaded, 'agent' = avatar/UI */
+    type: 'generator' | 'user' | 'agent';
+}
+
+export interface LovartProjectDetail {
+    projectId: string;
+    projectName: string;
+    projectType: number;
+    version: string;
+    isValidProject: boolean;
+    isTitleChanged: boolean;
+    isNewProject: boolean;
+    /** canvasDataV1 if the canvas was non-empty, null otherwise */
+    canvasDataV1: LovartCanvasDataV1 | null;
+    images: LovartProjectImage[];
+}
+
+export interface LovartCanvasDataV1 {
+    tldrawSnapshot?: TldrawSnapshot;
+    [key: string]: unknown;
+}
+
+export interface TldrawSnapshot {
+    document: TldrawDocument;
+    store?: unknown;
+    session?: TldrawSession;
+}
+
+export interface TldrawDocument {
+    records: Record<string, TldrawShape>;
+    schema?: unknown;
+}
+
+export interface TldrawSession {
+    pageStates: TldrawPageState[];
+}
+
+export interface TldrawPageState {
+    id: string;
+    camera?: { x: number; y: number; z: number };
+    editingId?: string | null;
+}
+
+export interface TldrawShape {
+    id: string;
+    type: string;
+    props?: {
+        url?: string;
+        coverUrl?: string;
+        w?: number;
+        h?: number;
+        [key: string]: unknown;
+    };
+    parentId?: string;
+}
+
+/**
+ * Call `canva/project/queryProject` and parse the canvasDataV1 JSON blob.
+ *
+ * Auth: `usertoken` cookie forwarded as `token` header (same as `projects`).
+ * The API retries once on 401 because Lovart sometimes sends a stale cookie
+ * that gets refreshed by the first 401.
+ */
+export async function readLovartProject(
+    page: any,
+    projectId: string,
+): Promise<LovartProjectDetail> {
+    await page.goto(LOVART_HOMEPAGE);
+    await page.wait({ selector: 'body', timeoutMs: 8000 });
+
+    const result = unwrapEvaluateResult<{
+        ok: boolean;
+        data: {
+            projectId: string;
+            projectName: string;
+            projectType: number;
+            version: string;
+            isValidProject: boolean;
+            isTitleChanged: boolean;
+            isNewProject: boolean;
+            canvasRaw: string | null; // canvasDataV1 serialized, empty string when new
+            error?: string;
+            status?: number;
+        };
+        error?: string;
+    }>(await page.evaluate(
+        `
+        (async () => {
+            const tok = (document.cookie.match(/usertoken=([^;]+)/) || [])[1] || '';
+            if (!tok) return { ok: false, error: 'usertoken cookie missing' };
+
+            // Retry-once pattern mirrors what the studio frontend does (code 401).
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    const resp = await fetch('/api/canva/project/queryProject', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'token': tok,
+                            'x-language': 'zh',
+                        },
+                        body: JSON.stringify({ projectId: ${JSON.stringify(projectId)} }),
+                        credentials: 'include',
+                    });
+                    const body = await resp.json();
+                    if (body?.code === 0 || body?.code === '0') {
+                        return { ok: true, data: body.data };
+                    }
+                    if (body?.code === 401 && attempt === 0) continue; // retry once
+                    return { ok: false, error: 'API code ' + body?.code + ' ' + (body?.msg || ''), data: body?.data };
+                } catch (e) {
+                    return { ok: false, error: 'fetch failed: ' + String(e && e.message || e) };
+                }
+            }
+        })()
+    `,
+    ));
+
+    if (!result || !result.ok) {
+        throw new AuthRequiredError(
+            LOVART_DOMAIN,
+            result?.error || 'Lovart queryProject API failed.',
+        );
+    }
+
+    const d = result.data;
+    const raw = d.canvasRaw ?? '';
+
+    let canvasDataV1: LovartCanvasDataV1 | null = null;
+    if (raw) {
+        try {
+            canvasDataV1 = JSON.parse(raw) as LovartCanvasDataV1;
+        } catch {
+            // Non-fatal: return null canvas, empty images
+        }
+    }
+
+    const images = canvasDataV1 ? parseLovartProjectImages(canvasDataV1) : [];
+
+    return {
+        projectId: d.projectId || projectId,
+        projectName: d.projectName ?? '',
+        projectType: d.projectType ?? 3,
+        version: d.version ?? '',
+        isValidProject: d.isValidProject ?? false,
+        isTitleChanged: d.isTitleChanged ?? false,
+        isNewProject: d.isNewProject ?? false,
+        canvasDataV1,
+        images,
+    };
+}
+
+/**
+ * Extract image shapes from a canvasDataV1 tldrawSnapshot.
+ *
+ * Shape types confirmed in the bundle (verified 2026-06):
+ *   "c-image"  → props.url          (AI-generated or user-uploaded image)
+ *   "c-video"  → props.coverUrl    (video poster frame)
+ *
+ * Type is inferred by the URL path:
+ *   /artifacts/generator/  → 'generator'
+ *   /artifacts/user/       → 'user'
+ *   /artifacts/agent/       → 'agent'
+ *   otherwise             → 'unknown' (not emitted in this impl)
+ */
+export function parseLovartProjectImages(canvasDataV1: LovartCanvasDataV1): LovartProjectImage[] {
+    const snapshot = canvasDataV1?.tldrawSnapshot;
+    if (!snapshot) return [];
+
+    const records = (snapshot as TldrawSnapshot).document?.records;
+    if (!records || typeof records !== 'object') return [];
+
+    const images: LovartProjectImage[] = [];
+
+    for (const [shapeId, shape] of Object.entries(records)) {
+        if (!shape || typeof shape !== 'object') continue;
+        const s = shape as TldrawShape;
+        if (s.type === 'c-image' || s.type === 'c-video') {
+            const url = s.type === 'c-image'
+                ? (s.props?.url ?? '')
+                : (s.props?.coverUrl ?? '');
+            if (!url) continue;
+
+            let type: LovartProjectImage['type'] = 'unknown';
+            if (url.includes('/artifacts/generator/')) type = 'generator';
+            else if (url.includes('/artifacts/user/')) type = 'user';
+            else if (url.includes('/artifacts/agent/')) type = 'agent';
+
+            images.push({
+                shapeId: s.id || shapeId,
+                url,
+                w: s.props?.w ?? 0,
+                h: s.props?.h ?? 0,
+                type,
+            });
+        }
+    }
+
+    return images;
+}
