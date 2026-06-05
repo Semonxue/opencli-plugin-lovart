@@ -37,6 +37,7 @@ cli({
         '  opencli lovart project <id> --videos     # AI生成的视频\n' +
         '  opencli lovart project <id> --uploads   # 用户上传的图\n' +
         '  opencli lovart project <id> --all        # all three above\n' +
+        '  opencli lovart project <id> --all --limit 20   # 前20条\n' +
         '  opencli lovart project <id> --canvas    # raw canvas JSON\n' +
         '  opencli lovart project <id> --export-canvas f  # save tldrawSnapshot\n' +
         '  opencli lovart project <id> --dump-page f      # full page debug dump',
@@ -87,6 +88,12 @@ cli({
             help: 'Path to write the tldrawSnapshot as a local .json file.',
         },
         {
+            name: 'limit',
+            default: 0,
+            type: 'int',
+            help: 'Max asset rows to list (0 = unlimited). Use with --images/--videos/--uploads/--all.',
+        },
+        {
             name: 'dumpPage',
             default: '',
             type: 'string',
@@ -105,6 +112,7 @@ cli({
         const showCanvas = Boolean(kwargs.canvas);
         const exportPath = String(kwargs.exportCanvas || '').trim();
         const dumpPath = String(kwargs.dumpPage || '').trim();
+        const limit = Number(kwargs.limit) || 0;
 
         // --dump-page: capture everything and exit
         if (dumpPath) {
@@ -160,35 +168,37 @@ cli({
         const rows: Array<{ type: string; size: string; url: string }> = [];
 
         // Summary row first (always shown)
-        rows.push({
+        const summary: Array<{ type: string; size: string; url: string }> = [{
             type: `📦 ${result.projectName}`,
             size: assetSummary,
             url: '',
-        });
+        }];
+
+        const assetRows: Array<{ type: string; size: string; url: string }> = [];
 
         if (showAll || showImages) {
             for (const a of result.genImages) {
-                const emoji = KIND_EMOJI[a.kind] ?? '🖼️';
-                rows.push({ type: emoji, size: fmtSize(a.w, a.h), url: a.url });
+                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🖼️', size: fmtSize(a.w, a.h), url: a.url });
             }
         }
 
         if (showAll || showVideos) {
             for (const a of result.genVideos) {
-                const emoji = KIND_EMOJI[a.kind] ?? '🎬';
-                rows.push({ type: emoji, size: fmtSize(a.w, a.h), url: a.url });
+                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '🎬', size: fmtSize(a.w, a.h), url: a.url });
             }
         }
 
         if (showAll || showUploads) {
             for (const a of result.userImages) {
-                const emoji = KIND_EMOJI[a.kind] ?? '📷';
-                rows.push({ type: emoji, size: fmtSize(a.w, a.h), url: a.url });
+                assetRows.push({ type: KIND_EMOJI[a.kind] ?? '📷', size: fmtSize(a.w, a.h), url: a.url });
             }
         }
 
-        // If no flags, just return the summary row
-        return showAny ? rows : rows.slice(0, 1);
+        // Apply limit if specified
+        const finalRows = limit > 0 ? [...summary, ...assetRows.slice(0, limit)] : [...summary, ...assetRows];
+
+        // If no asset flags, just return the summary row
+        return showAny ? finalRows : summary;
     },
 });
 
