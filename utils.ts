@@ -330,11 +330,12 @@ export async function readLovartProject(
     // canvas data when the session is on the canvas route (set-cookie + session state).
     const canvasUrl = `https://www.lovart.ai/canvas?projectId=${projectId}`;
     await page.goto(canvasUrl);
-    // Wait for the canvas page to fully load (use body which is always present)
+    // Wait for the canvas page to fully load
     await page.wait({ selector: 'body', timeoutMs: 8000 });
-    // Extra wait for the studio to hydrate canvas data from server
+    // Give the studio time to hydrate
     await page.wait(3000);
 
+    // Try the API first, then fall back to reading from localStorage/tldraw state
     const result = unwrapEvaluateResult<{
         ok: boolean;
         data: {
@@ -400,6 +401,11 @@ export async function readLovartProject(
         }
     }
 
+    // If API returned null canvas, try reading from localStorage (tldraw persistence)
+    if (!canvasDataV1) {
+        canvasDataV1 = await readCanvasFromLocalStorage(page, projectId);
+    }
+
     const images = canvasDataV1 ? parseLovartProjectImages(canvasDataV1) : [];
 
     return {
@@ -415,6 +421,61 @@ export async function readLovartProject(
         canvasDataV1,
         images,
     };
+}
+
+/**
+ * Read the canvas snapshot from localStorage. Lovart uses tldraw's
+ * `storeWithStatus` persistence — the snapshot key includes the projectId.
+ */
+async function readCanvasFromLocalStorage(
+    page: any,
+    projectId: string,
+): Promise<LovartCanvasDataV1 | null> {
+    const result = unwrapEvaluateResult<string | null>(await page.evaluate(
+        `(projectId) => {
+            try {
+                // Try the tldraw localStorage key pattern
+                const key = 'tldraw/' + projectId;
+                const raw = localStorage.getItem(key);
+                if (raw) return raw;
+                // Try a wildcard search for any key containing the projectId
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.includes(projectId)) {
+                        return localStorage.getItem(k);
+                    }
+                }
+                // Try sessionStorage too
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const k = sessionStorage.key(i);
+                    if (k && k.includes(projectId)) {
+                        return sessionStorage.getItem(k);
+                    }
+                }
+                return null;
+            } catch (e) {
+                return null;
+            }
+        }`,
+        projectId,
+    ));
+
+    if (!result) return null;
+
+    try {
+        const parsed = JSON.parse(result);
+        // The localStorage value might be the canvasDataV1 directly or wrapped
+        if (parsed && typeof parsed === 'object') {
+            if (parsed.tldrawSnapshot) return parsed as LovartCanvasDataV1;
+            if (parsed.store) {
+                // Wrapped in a store snapshot format
+                return parsed as LovartCanvasDataV1;
+            }
+        }
+        return null;
+    } catch {
+        return null;
+    }
 }
 
 /**
