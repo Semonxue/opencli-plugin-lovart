@@ -10,11 +10,11 @@ Strategy: `UI` — Lovart is a React SPA with no public API; the adapter reads `
 ## Install
 
 ```sh
-# from a local clone
-opencli plugin install file:///Users/semonxue/Workplace/Works/ai-dev/lovart-opencli-plugin
+# from the public repo
+opencli plugin install git@github.com:Semonxue/opencli-plugin-lovart.git
 
-# or from a git repo
-opencli plugin install git@github.com:<you>/opencli-plugin-lovart.git
+# or from a local clone
+opencli plugin install file:///Users/semonxue/Workplace/Works/ai-dev/lovart-opencli-plugin
 ```
 
 Then run `opencli lovart --help` to confirm registration.
