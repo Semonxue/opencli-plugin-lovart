@@ -39,7 +39,7 @@ cli({
         '  opencli lovart project <id> --all        # all three above\n' +
         '  opencli lovart project <id> --all --limit 20   # 前20条\n' +
         '  opencli lovart project <id> --canvas    # raw canvas JSON\n' +
-        '  opencli lovart project <id> --export-canvas f  # save tldrawSnapshot\n' +
+        '  opencli lovart project <id> --export-canvas f  # save canvas JSON\n' +
         '  opencli lovart project <id> --dump-page f      # full page debug dump',
     domain: 'www.lovart.ai',
     strategy: Strategy.COOKIE,
@@ -82,7 +82,7 @@ cli({
             help: 'Show raw canvasDataV1 JSON.',
         },
         {
-            name: 'exportCanvas',
+            name: 'export-canvas',
             default: '',
             type: 'string',
             help: 'Path to write the full canvas JSON (canvasDataV1) to a local .json file.',
@@ -94,7 +94,7 @@ cli({
             help: 'Max asset rows to list (0 = unlimited). Use with --images/--videos/--uploads/--all.',
         },
         {
-            name: 'dumpPage',
+            name: 'dump-page',
             default: '',
             type: 'string',
             help: 'Path to dump all raw page state for debugging.',
@@ -110,8 +110,8 @@ cli({
         const showUploads = Boolean(kwargs.uploads);
         const showAll = Boolean(kwargs.all);
         const showCanvas = Boolean(kwargs.canvas);
-        const exportPath = String(kwargs.exportCanvas || '').trim();
-        const dumpArg = kwargs.dumpPage;
+        const exportPath = String(kwargs['export-canvas'] || '').trim();
+        const dumpArg = kwargs['dump-page'];
         const dumpPath = (typeof dumpArg === 'string' && dumpArg.trim()) ? dumpArg.trim() : '';
         const limit = Number(kwargs.limit) || 0;
 
