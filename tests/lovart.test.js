@@ -204,7 +204,7 @@ describe('lovart/project metadata', () => {
     const cmd = getRegistry().get('lovart/project');
 
     it('is registered with the expected columns', () => {
-        expect(cmd.columns).toEqual(['type', 'size', 'info', 'url']);
+        expect(cmd.columns).toEqual(['id', 'parent', 'type', 'name', 'source', 'size', 'duration', 'task', 'url']);
     });
 
     it('declares the documented args (--list, --canvas, --export-canvas, --limit, --export-page)', () => {

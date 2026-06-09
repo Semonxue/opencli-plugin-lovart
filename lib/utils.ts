@@ -285,6 +285,13 @@ function zlibGunzip(buf: Buffer): Buffer {
 export const LIST_KINDS: ReadonlySet<string> = new Set(['all', 'image', 'video', 'upload']);
 
 /**
+ * `all-tree` is a separate kind that returns the canvas as a structured
+ * tree (containers + their children) instead of a flat list. Rows carry
+ * a `parent` field so callers can rebuild the tree from any output format.
+ */
+export const LIST_KIND_TREE = 'all-tree';
+
+/**
  * Map of common plural spellings to the canonical singular kind.
  * Lets users type `--list images` (or `videos` / `uploads`) without
  * having to remember the singular form.
@@ -293,6 +300,8 @@ export const LIST_ALIASES: Readonly<Record<string, string>> = {
     images: 'image',
     videos: 'video',
     uploads: 'upload',
+    trees: 'all-tree',
+    tree: 'all-tree',
 };
 
 /**
@@ -635,6 +644,279 @@ export function parseCanvasAssets(canvasDataV1: LovartCanvasDataV1 | null): {
     }
 
     return { genImages, genVideos, userImages, groupCount };
+}
+
+// ---------------------------------------------------------------------------
+// Canvas tree (containers + children) — for --list all-tree
+// ---------------------------------------------------------------------------
+
+/**
+ * A single row in the --list all-tree output.
+ *
+ * Every row carries a `parent` field. Containers (frames / groups) have
+ * `parent: null` and are referenced by their `id` from the children they
+ * contain. Top-level material shapes have `parent: null` too. This
+ * means: walk the list, build a map by id, and rebuild the tree from
+ * `parent` — works identically in json / yaml / csv / md output.
+ */
+/**
+ * A single row in the --list all-tree output.
+ *
+ * Every field is a direct, traceable projection of the canvas data —
+ * no derived emojis, no synthetic markers. Agents consuming this output
+ * should be able to round-trip any value back to its source shape.
+ *
+ * Field → source mapping:
+ *   id       → canvas `shape.<id>` (or the literal "summary" for the project header)
+ *   parent   → canvas `shape.parentId` (or null when top-level or summary)
+ *   type     → canvas `shape.type` — raw enum ('c-image' | 'c-video' | 'frame' | 'group');
+ *             the synthetic value 'summary' marks the project header row
+ *   source   → canvas `shape.meta.source` ('ai' | 'user') mapped to ('ai' | 'upload');
+ *             containers and summary use '—'
+ *   name     → canvas `shape.props.name` (containers) or `'(unnamed)'` fallback
+ *   size     → canvas `shape.props.{w,h}` joined as 'WxH' (rounded); containers and summary use '—'
+ *   duration → canvas `shape.props.duration` (seconds, as a number) for video rows; null otherwise.
+ *             Raw number — not a string with units — so callers can do arithmetic without parsing.
+ *   task     → first 8 chars of canvas `shape.props.generatorTaskId`, or '—'
+ *   url      → canvas `shape.props.url` (or `props.originalUrl` for the cover image of videos), or '—'
+ */
+export interface CanvasTreeRow {
+    /** Shape id (`shape:...`) for shapes, or the literal string "summary" for the project header row */
+    id: string;
+    /** null for summary / top-level containers / top-level materials; otherwise the container shape id */
+    parent: string | null;
+    /** 'summary' | 'frame' | 'group' | 'c-image' | 'c-video' — raw canvas type (no decoration) */
+    type: 'summary' | 'frame' | 'group' | 'c-image' | 'c-video';
+    /** 'ai' | 'upload' | '—' */
+    source: 'ai' | 'upload' | '—';
+    /** Container or material name; '(unnamed)' fallback when canvas props.name is missing */
+    name: string;
+    /** 'WxH' for materials, '—' for containers */
+    size: string;
+    /** Video duration in seconds (raw number) or null for non-video / container / summary rows */
+    duration: number | null;
+    /** First 8 chars of generatorTaskId, or '—' */
+    task: string;
+    /** Full URL (no truncation) or '—' */
+    url: string;
+}
+
+export interface CanvasTree {
+    /** Project summary row, always first */
+    summary: CanvasTreeRow;
+    /** Containers (frame + group) and their children, plus top-level materials — all in render order */
+    rows: CanvasTreeRow[];
+    /** Counts for the summary */
+    counts: {
+        aiImages: number;
+        aiVideos: number;
+        uploads: number;
+        containers: number;
+        frameChildren: number;
+    };
+}
+
+/**
+ * Build the structured tree rows from a parsed canvas snapshot.
+ *
+ * Render order:
+ *   1) summary row (parent: null, kind: 'summary')
+ *   2) for each container (frame / group) sorted by y then x:
+ *        - the container row (parent: null)
+ *        - its child shapes sorted by y then x, with parent set to the container id
+ *   3) top-level materials (parentId === 'page:page'), sorted by y then x
+ *
+ * Two shapes that share the same generatorTaskId are placed next to each
+ * other when possible; the second one gets a `⚝` shareMarker so it's
+ * visible in the md/table output.
+ */
+export function parseCanvasTree(
+    canvasDataV1: LovartCanvasDataV1 | null,
+    projectName: string,
+    projectId: string,
+    projectType: number,
+    projectUrl: string,
+): CanvasTree {
+    const store = (canvasDataV1 as any)?.tldrawSnapshot?.document?.store;
+    const rows: CanvasTreeRow[] = [];
+
+    const summary: CanvasTreeRow = {
+        id: 'summary',
+        parent: null,
+        type: 'summary',
+        source: '—',
+        size: '—',
+        name: projectName || '—',
+        duration: null,
+        task: '—',
+        url: projectUrl || '—',
+    };
+
+    if (!store || typeof store !== 'object') {
+        return {
+            summary,
+            rows: [summary],
+            counts: { aiImages: 0, aiVideos: 0, uploads: 0, containers: 0, frameChildren: 0 },
+        };
+    }
+
+    // Build a quick id -> raw map once.
+    const byId: Record<string, Record<string, unknown>> = {};
+    for (const [k, v] of Object.entries(store)) {
+        if (v && typeof v === 'object') byId[k] = v as Record<string, unknown>;
+    }
+
+    // Identify containers: 'frame' (Lovart hard container, children use parentId)
+    // and 'group' (tldraw native, children may or may not be inside via parentId).
+    const containers: Array<{ id: string; raw: Record<string, unknown>; kind: 'frame' | 'group' }> = [];
+    for (const [id, raw] of Object.entries(byId)) {
+        const t = String(raw.type ?? '');
+        if (t === 'frame' || t === 'group') {
+            containers.push({ id, raw, kind: t as 'frame' | 'group' });
+        }
+    }
+
+    // Sort containers by (y, x)
+    const sortByPos = (a: Record<string, unknown>, b: Record<string, unknown>): number => {
+        const ay = Number(a.y ?? 0), by = Number(b.y ?? 0);
+        if (ay !== by) return ay - by;
+        return Number(a.x ?? 0) - Number(b.x ?? 0);
+    };
+    containers.sort((a, b) => sortByPos(a.raw, b.raw));
+
+    // Build rows
+    let aiImages = 0, aiVideos = 0, uploads = 0, frameChildren = 0;
+    const lastTaskPerContainer = new Map<string, string>();
+
+    for (const { id, raw, kind } of containers) {
+        const props = (raw.props as Record<string, unknown> | undefined) ?? {};
+        const w = Number(props.w ?? 0), h = Number(props.h ?? 0);
+        const name = String(props.name ?? '—').trim() || '—';
+        const containerRow: CanvasTreeRow = {
+            id,
+            parent: null,
+            type: kind,
+            source: '—',
+            size: w > 0 && h > 0 ? `${Math.round(w)}×${Math.round(h)}` : '—',
+            name,
+            duration: null,
+            task: '—',
+            url: '—',
+        };
+        rows.push(containerRow);
+
+        // Find children: shapes whose parentId === this container id.
+        const children: Record<string, unknown>[] = [];
+        for (const [cid, cs] of Object.entries(byId)) {
+            if (cs.parentId === id) children.push(cs as Record<string, unknown>);
+        }
+        children.sort(sortByPos);
+
+        for (const cs of children) {
+            const ct = String(cs.type ?? '');
+            const cp = (cs.props as Record<string, unknown> | undefined) ?? {};
+            const cName = String(cp.name ?? '').trim() || '(unnamed)';
+            const cUrl = String(cp.url ?? '');
+            const cTask = String(cp.generatorTaskId ?? '');
+            const cw = Number(cp.w ?? 0), ch = Number(cp.h ?? 0);
+            const source = String((cs.meta as any)?.source ?? '—');
+            const dur = cp.duration != null ? Number(cp.duration) : null;
+
+            let rowKind: 'c-image' | 'c-video' = 'c-image';
+            if (ct === 'c-video') rowKind = 'c-video';
+            else if (ct === 'c-image') rowKind = 'c-image';
+            else continue; // skip non-material children
+
+            // For media: only count if the URL matches a real artifact path.
+            // (Defensive: tldraw can carry editor-internal shapes too.)
+            const isGenerator = cUrl.includes('/artifacts/generator/');
+            const isUser = cUrl.includes('/artifacts/user/');
+            if (!isGenerator && !isUser && rowKind === 'c-image') continue;
+
+            if (isGenerator && rowKind === 'c-image') aiImages++;
+            else if (isGenerator && rowKind === 'c-video') aiVideos++;
+            else if (isUser) uploads++;
+
+            if (kind === 'frame') frameChildren++;
+
+            // Track task ids so the caller can detect shared-task groups;
+            // no synthetic visual marker is added to rows.
+            if (cTask) lastTaskPerContainer.set(id, cTask);
+
+            const url = cUrl || '—';
+            const size = cw > 0 && ch > 0 ? `${Math.round(cw)}×${Math.round(ch)}` : '—';
+
+            rows.push({
+                id: String(cs.id ?? `${id}:${rows.length}`),
+                parent: id,
+                type: rowKind,
+                source,
+                size,
+                name: cName,
+                duration: rowKind === 'c-video' ? dur : null,
+                task: cTask ? cTask.slice(0, 8) : '—',
+                url,
+            });
+        }
+    }
+
+    // Top-level materials: parentId === 'page:page' AND type is c-image / c-video
+    const topLevel: Record<string, unknown>[] = [];
+    for (const cs of Object.values(byId)) {
+        if (cs.parentId !== 'page:page') continue;
+        const ct = String(cs.type ?? '');
+        if (ct !== 'c-image' && ct !== 'c-video') continue;
+        topLevel.push(cs);
+    }
+    topLevel.sort(sortByPos);
+
+    let lastTopTask = '';
+    for (const cs of topLevel) {
+        const ct = String(cs.type ?? '');
+        const cp = (cs.props as Record<string, unknown> | undefined) ?? {};
+        const cName = String(cp.name ?? '').trim() || '(unnamed)';
+        const cUrl = String(cp.url ?? '');
+        const cTask = String(cp.generatorTaskId ?? '');
+        const cw = Number(cp.w ?? 0), ch = Number(cp.h ?? 0);
+        const source = String((cs.meta as any)?.source ?? '—');
+        const dur = cp.duration != null ? Number(cp.duration) : null;
+
+        const isGenerator = cUrl.includes('/artifacts/generator/');
+        const isUser = cUrl.includes('/artifacts/user/');
+        if (!isGenerator && !isUser && ct === 'c-image') continue;
+
+        if (isGenerator && ct === 'c-image') aiImages++;
+        else if (isGenerator && ct === 'c-video') aiVideos++;
+        else if (isUser) uploads++;
+
+        // Track task ids so the caller can detect shared-task groups;
+        // no synthetic visual marker is added to rows.
+        if (cTask) lastTopTask = cTask;
+
+        const url = cUrl || '—';
+        const size = cw > 0 && ch > 0 ? `${Math.round(cw)}×${Math.round(ch)}` : '—';
+
+        rows.push({
+            id: String(cs.id ?? `top:${rows.length}`),
+            parent: null,
+            type: ct === 'c-video' ? 'c-video' : 'c-image',
+            source,
+            size,
+            name: cName,
+            duration: ct === 'c-video' ? dur : null,
+            task: cTask ? cTask.slice(0, 8) : '—',
+            url,
+        });
+    }
+
+    const counts = {
+        aiImages,
+        aiVideos,
+        uploads,
+        containers: containers.length,
+        frameChildren,
+    };
+    return { summary, rows: [summary, ...rows], counts };
 }
 
 
